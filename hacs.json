@@ -1,6 +1,6 @@
 {
   "name": "Dynamic scheduled scenes and circadian lighting for Home Assistant",
-  "homeassistant": ">=2026.6.0",
+  "homeassistant": "2026.5.0",
   "content_in_root": false,
   "zip_release": false,
   "render_readme": true
