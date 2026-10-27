@@ -1,0 +1,80 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  hassfest:
+    # home-assistant/actions/hassfest is a Dockerfile action: it mounts
+    # $GITHUB_WORKSPACE into the container. On Forgejo Actions the docker
+    # CLI inside the job container talks to the *host* daemon (socket mount
+    # from image-builder), so the mount references a path that doesn't
+    # exist on the host and hassfest reports "No integrations found".
+    # Run it as a Python module against a shallow HA core clone instead —
+    # no docker, no image-builder. Infra task #222.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: hassfest-${{ runner.os }}-py3.13-v2
+      - name: Install homeassistant + fetch matching core
+        run: |
+          python -m pip install --upgrade pip
+          # tqdm + ruff are script-only deps of hassfest that aren't
+          # pulled in by the homeassistant runtime package. --requirements
+          # is dropped from the invocation below because its transitive
+          # dependency chain (pipdeptree, pip-tools, …) is not worth
+          # reconstructing for a manifest with no external requirements.
+          python -m pip install homeassistant tqdm ruff
+          HA_VERSION=$(python -c "from importlib.metadata import version; print(version('homeassistant'))")
+          echo "HA_VERSION=$HA_VERSION" >>"$GITHUB_ENV"
+          rm -rf /tmp/ha-core
+          # Clone core at the tag matching the pip-installed package so
+          # script.hassfest lines up with the runtime it validates against.
+          # master can outpace the released package and introduce Python
+          # incompatibilities (e.g. self-referencing class annotations).
+          git clone --depth 1 --branch "$HA_VERSION" \
+            https://github.com/home-assistant/core /tmp/ha-core
+      - name: Run hassfest
+        run: |
+          cd /tmp/ha-core
+          python -m script.hassfest \
+            --integration-path "$GITHUB_WORKSPACE/custom_components/scheduled_scenes" \
+            --action validate
+
+  hacs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hacs/action@main
+        with:
+          # hacs/action reads its token from the `github_token` *input*
+          # (container env INPUT_GITHUB_TOKEN), not a step-level
+          # GITHUB_TOKEN env var — that env var is never read by the
+          # container at all. Unset, it defaults to `${{ github.token }}`,
+          # Forgejo's own instance-scoped ephemeral token, which
+          # api.github.com rejects with 401. `repository` also needs
+          # pinning: `github.repository` resolves to the *Forgejo* repo,
+          # not the GitHub mirror HACS actually needs to validate.
+          # See infra #223.
+          github_token: ${{ secrets.HACS_GITHUB_TOKEN }}
+          repository: timmikk/ha-scheduled-scenes
+          category: integration
+          ignore: brands
+
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements_test.txt
+      - run: pytest -q
