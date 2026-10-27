@@ -1,12 +1,14 @@
 {
   "domain": "scheduled_scenes",
   "name": "Dynamic scheduled scenes and circadian lighting for Home Assistant",
-  "codeowners": ["@timmikk"],
+  "codeowners": [
+    "@timmikk"
+  ],
   "config_flow": true,
   "dependencies": [],
   "documentation": "https://github.com/timmikk/ha-scheduled-scenes",
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/timmikk/ha-scheduled-scenes/issues",
   "requirements": [],
-  "version": "0.0.1"
+  "version": "0.1.0"
 }

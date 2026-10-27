@@ -7,13 +7,6 @@ on:
 
 jobs:
   hassfest:
-    # home-assistant/actions/hassfest is a Dockerfile action: it mounts
-    # $GITHUB_WORKSPACE into the container. On Forgejo Actions the docker
-    # CLI inside the job container talks to the *host* daemon (socket mount
-    # from image-builder), so the mount references a path that doesn't
-    # exist on the host and hassfest reports "No integrations found".
-    # Run it as a Python module against a shallow HA core clone instead —
-    # no docker, no image-builder. Infra task #222.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,19 +20,10 @@ jobs:
       - name: Install homeassistant + fetch matching core
         run: |
           python -m pip install --upgrade pip
-          # tqdm + ruff are script-only deps of hassfest that aren't
-          # pulled in by the homeassistant runtime package. --requirements
-          # is dropped from the invocation below because its transitive
-          # dependency chain (pipdeptree, pip-tools, …) is not worth
-          # reconstructing for a manifest with no external requirements.
           python -m pip install homeassistant tqdm ruff
           HA_VERSION=$(python -c "from importlib.metadata import version; print(version('homeassistant'))")
           echo "HA_VERSION=$HA_VERSION" >>"$GITHUB_ENV"
           rm -rf /tmp/ha-core
-          # Clone core at the tag matching the pip-installed package so
-          # script.hassfest lines up with the runtime it validates against.
-          # master can outpace the released package and introduce Python
-          # incompatibilities (e.g. self-referencing class annotations).
           git clone --depth 1 --branch "$HA_VERSION" \
             https://github.com/home-assistant/core /tmp/ha-core
       - name: Run hassfest
@@ -55,15 +39,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: hacs/action@main
         with:
-          # hacs/action reads its token from the `github_token` *input*
-          # (container env INPUT_GITHUB_TOKEN), not a step-level
-          # GITHUB_TOKEN env var — that env var is never read by the
-          # container at all. Unset, it defaults to `${{ github.token }}`,
-          # Forgejo's own instance-scoped ephemeral token, which
-          # api.github.com rejects with 401. `repository` also needs
-          # pinning: `github.repository` resolves to the *Forgejo* repo,
-          # not the GitHub mirror HACS actually needs to validate.
-          # See infra #223.
           github_token: ${{ secrets.HACS_GITHUB_TOKEN }}
           repository: timmikk/ha-scheduled-scenes
           category: integration
@@ -77,4 +52,42 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements_test.txt
-      - run: pytest -q
+      - run: |
+          pytest -q --cov=custom_components/scheduled_scenes --cov-branch \
+            --cov-report=xml --cov-report=term-missing
+      - uses: actions/upload-artifact@v3
+        with:
+          name: coverage-xml
+          path: coverage.xml
+
+  sonar:
+    runs-on: ubuntu-latest
+    needs: [pytest]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v3
+        with:
+          name: coverage-xml
+      - name: Cache sonar-scanner
+        id: sonar-cache
+        uses: actions/cache@v4
+        with:
+          path: /opt/sonar-scanner-6.2.1.4610-linux-x64
+          key: sonar-scanner-6.2.1.4610-${{ runner.os }}
+      - name: Install sonar-scanner
+        if: steps.sonar-cache.outputs.cache-hit != 'true'
+        run: |
+          apt-get update -qq && apt-get install -y -qq unzip > /dev/null 2>&1
+          curl -sL "https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-6.2.1.4610-linux-x64.zip" -o /tmp/sonar.zip
+          unzip -q /tmp/sonar.zip -d /opt
+          rm /tmp/sonar.zip
+      - name: Link sonar-scanner
+        run: ln -sf /opt/sonar-scanner-6.2.1.4610-linux-x64/bin/sonar-scanner /usr/local/bin/sonar-scanner
+      - name: SonarQube analysis
+        env:
+          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: sonar-scanner

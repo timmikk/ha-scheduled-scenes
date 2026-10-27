@@ -1,0 +1,50 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Scheduled Scene Program",
+        "description": "Configure light schedule curve and transition behaviors for a room.",
+        "data": {
+          "name": "Room Name",
+          "lights": "Lights",
+          "transition_time": "Transition Time (seconds)",
+          "transition_interval": "Periodic Interval (seconds)",
+          "transition_time_light_on_trigger": "Transition Time on Light Turn On (seconds)",
+          "transition_time_on": "Turn On Service Transition Time (seconds)",
+          "enable_when_light_turn_on": "Enable schedule when any light turns on",
+          "disable_when_lights_off": "Disable schedule when all lights turn off",
+          "allow_turn_on_if_any_on": "Allow turning on lights if any light is on",
+          "schedule": "Schedule Curve (YAML)"
+        }
+      }
+    },
+    "error": {
+      "invalid_schedule": "The schedule must be valid YAML with at least one schedule step."
+    },
+    "abort": {
+      "already_configured": "A room with this name is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Scheduled Scene Options",
+        "description": "Update light schedule curve and timing parameters.",
+        "data": {
+          "lights": "Lights",
+          "transition_time": "Transition Time (seconds)",
+          "transition_interval": "Periodic Interval (seconds)",
+          "transition_time_light_on_trigger": "Transition Time on Light Turn On (seconds)",
+          "transition_time_on": "Turn On Service Transition Time (seconds)",
+          "enable_when_light_turn_on": "Enable schedule when any light turns on",
+          "disable_when_lights_off": "Disable schedule when all lights turn off",
+          "allow_turn_on_if_any_on": "Allow turning on lights if any light is on",
+          "schedule": "Schedule Curve (YAML)"
+        }
+      }
+    },
+    "error": {
+      "invalid_schedule": "The schedule must be valid YAML with at least one schedule step."
+    }
+  }
+}

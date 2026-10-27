@@ -1,0 +1,71 @@
+turn_on:
+  name: Turn on
+  description: Turn on lights for a scheduled scene room and apply current schedule curve.
+  target:
+    entity:
+      domain: switch
+      integration: scheduled_scenes
+  fields:
+    transition:
+      name: Transition
+      description: Optional transition time in seconds.
+      example: 0.5
+      selector:
+        number:
+          min: 0
+          max: 300
+          step: 0.1
+          mode: box
+          unit_of_measurement: s
+
+turn_off:
+  name: Turn off
+  description: Turn off all lights for a scheduled scene room.
+  target:
+    entity:
+      domain: switch
+      integration: scheduled_scenes
+  fields:
+    transition:
+      name: Transition
+      description: Optional transition time in seconds.
+      example: 0.5
+      selector:
+        number:
+          min: 0
+          max: 300
+          step: 0.1
+          mode: box
+          unit_of_measurement: s
+
+enable:
+  name: Enable
+  description: Enable schedule transitions for a scheduled scene room.
+  target:
+    entity:
+      domain: switch
+      integration: scheduled_scenes
+
+disable:
+  name: Disable
+  description: Disable schedule transitions for a scheduled scene room, optionally for a duration.
+  target:
+    entity:
+      domain: switch
+      integration: scheduled_scenes
+  fields:
+    duration:
+      name: Duration
+      description: Optional duration in minutes to disable schedule transitions before auto-enabling.
+      example: 60
+      selector:
+        number:
+          min: 0
+          max: 1440
+          step: 1
+          mode: box
+          unit_of_measurement: min
+
+reload:
+  name: Reload
+  description: Reload scheduled_scenes YAML configuration without restarting Home Assistant.
