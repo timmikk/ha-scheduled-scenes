@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Dim-to-warm curves support for physical light models with automatic brightness-to-Kelvin derivation (task #1).
+- Piecewise linear curve interpolation engine with boundary clamping in `logic.py`.
+- Shared entity curve mapping: multiple entities can share a single physical light model curve.
+- Dual point format support: verbose dictionary mappings (`[{brightness: 1, temp: 2200}, ...]`) and compact coordinate pairs (`[[1, 2200], [100, 4000]]`).
+- Support for schedule steps omitting `temp` or using `dim_to_warm` / `dimm_to_warm` aliases while preserving backwards-compatibility with explicit temperature checkpoints.
+- Two-tier curve configuration: global top-level curves under `scheduled_scenes.curves` or scoped curves per program/room, plus UI config flow / options flow support.
+
 ## [0.1.1] - 2026-10-27
 
 ### Fixed
