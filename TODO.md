@@ -15,3 +15,9 @@ are read straight from the file. Entries are grouped by Category (fixed order fr
 
 ---
 
+## Features
+
+- [ ] **#3 diagnostic status entities** — Add diagnostic status entities for
+  room mode, curves in use, last command, brightness, and error state
+  `tasks/3-feature-diagnostic-status-entities.md`
+  **Status:** pending | **Priority:** medium | **Size:** M | **Mode:** auto | **Host:** all
