@@ -3,9 +3,12 @@
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 
 from custom_components.scheduled_scenes import async_setup
 from custom_components.scheduled_scenes.const import (
+    ATTR_BRIGHTNESS,
+    ATTR_STEP,
     CONF_BRIGHTNESS_CURVES,
     CONF_CURVES,
     CONF_DISABLE_WHEN_LIGHTS_OFF,
@@ -15,8 +18,10 @@ from custom_components.scheduled_scenes.const import (
     CONF_SCHEDULE,
     DEFAULT_COLOR_TEMP,
     DOMAIN,
+    SERVICE_ADJUST_BRIGHTNESS,
     SERVICE_DISABLE,
     SERVICE_ENABLE,
+    SERVICE_RESUME_SCHEDULE,
     SERVICE_TURN_ON,
 )
 from custom_components.scheduled_scenes.coordinator import ScheduledSceneProgram
@@ -159,9 +164,6 @@ async def test_coordinator_adjust_brightness_and_resume(hass: HomeAssistant) -> 
         await program.async_adjust_brightness(step=10, transition=0.5)
         assert program.manual_brightness == 60
 
-        # At room brightness 60%:
-        # accent is at 100% (dtw gives 4000K)
-        # ceiling is at interpolate(30, 100, (60-50)/50) = 44% (dtw gives interpolate(2700, 4000, 44/50...) -> ~2616 or similar)
         accent_call = next(c for c in calls if c[2]["entity_id"] == "light.living_accent")
         assert accent_call[2]["brightness_pct"] == 100
         assert accent_call[2]["color_temp_kelvin"] == 4000
@@ -363,6 +365,295 @@ async def test_switch_and_sensor_entities(hass: HomeAssistant) -> None:
     assert "end_time" in sensor.attributes
     assert "start_brightness" in sensor.attributes
     assert "end_brightness" in sensor.attributes
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+
+async def test_diagnostic_status_entities_lifecycle(hass: HomeAssistant) -> None:
+    """Test complete lifecycle and transitions of diagnostic status entities."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Office",
+        data={
+            CONF_NAME: "office",
+            CONF_LIGHTS: ["light.office"],
+            CONF_SCHEDULE: [
+                {"time": "08:00", "brightness": 100, "temp": 4000},
+                {"time": "20:00", "brightness": 50, "temp": 2500},
+            ],
+        },
+    )
+    entry.add_to_hass(hass)
+
+    light_calls = []
+
+    async def mock_light_service(call: ServiceCall):
+        light_calls.append((call.service, dict(call.data)))
+
+    hass.services.async_register("light", "turn_on", mock_light_service)
+    hass.services.async_register("light", "turn_off", mock_light_service)
+
+    # Initial light state is off
+    hass.states.async_set("light.office", "off")
+
+    assert await async_setup(hass, {})
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    # 1. Initial State: lights off -> auto-off
+    mode_state = hass.states.get("sensor.office_mode")
+    assert mode_state is not None
+    assert mode_state.state == "auto-off"
+
+    brightness_state = hass.states.get("sensor.office_current_brightness")
+    assert brightness_state is not None
+    assert int(brightness_state.state) == 0
+
+    command_state = hass.states.get("sensor.office_last_command")
+    assert command_state is not None
+    assert command_state.state == "none"
+
+    dtw_state = hass.states.get("binary_sensor.office_dim_to_warm_in_use")
+    assert dtw_state is not None
+    assert dtw_state.state == "off"
+
+    b_curve_state = hass.states.get("binary_sensor.office_brightness_curve_in_use")
+    assert b_curve_state is not None
+    assert b_curve_state.state == "off"
+
+    prob_state = hass.states.get("binary_sensor.office_problem")
+    assert prob_state is not None
+    assert prob_state.state == "off"
+
+    # 2. Lights turn on -> mode changes to auto, current brightness reflects physical brightness
+    hass.states.async_set("light.office", "on", {"brightness": 128})
+    await hass.async_block_till_done()
+
+    mode_state = hass.states.get("sensor.office_mode")
+    assert mode_state.state == "auto"
+
+    brightness_state = hass.states.get("sensor.office_current_brightness")
+    assert int(brightness_state.state) == 50
+
+    # 3. Adjust brightness via step -> mode changes to manual, last command is step brightness
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_ADJUST_BRIGHTNESS,
+        {"entity_id": "switch.schedule_office", ATTR_STEP: 10},
+    )
+    await hass.async_block_till_done()
+
+    mode_state = hass.states.get("sensor.office_mode")
+    assert mode_state.state == "manual"
+    assert mode_state.attributes["manual_override"] is True
+    assert mode_state.attributes["manual_brightness"] == 60
+
+    command_state = hass.states.get("sensor.office_last_command")
+    assert command_state.state == "step brightness"
+    assert command_state.attributes["details"]["step"] == 10
+
+    brightness_state = hass.states.get("sensor.office_current_brightness")
+    assert int(brightness_state.state) == 60
+
+    # 4. Explicitly set brightness -> last command is set brightness
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_ADJUST_BRIGHTNESS,
+        {"entity_id": "switch.schedule_office", ATTR_BRIGHTNESS: 80},
+    )
+    await hass.async_block_till_done()
+
+    command_state = hass.states.get("sensor.office_last_command")
+    assert command_state.state == "set brightness"
+    assert command_state.attributes["details"]["target_brightness"] == 80
+    assert hass.states.get("sensor.office_current_brightness").state == "80"
+
+    # 5. Resume schedule -> mode changes back to auto, last command is resume schedule
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_RESUME_SCHEDULE,
+        {"entity_id": "switch.schedule_office"},
+    )
+    await hass.async_block_till_done()
+
+    mode_state = hass.states.get("sensor.office_mode")
+    assert mode_state.state == "auto"
+    assert mode_state.attributes["manual_override"] is False
+
+    command_state = hass.states.get("sensor.office_last_command")
+    assert command_state.state == "resume schedule"
+
+    # 6. Turn off lights -> mode becomes auto-off, last command is auto off
+    hass.states.async_set("light.office", "off")
+    await hass.async_block_till_done()
+
+    mode_state = hass.states.get("sensor.office_mode")
+    assert mode_state.state == "auto-off"
+
+    command_state = hass.states.get("sensor.office_last_command")
+    assert command_state.state == "auto off"
+
+    # 7. Explicitly disable schedule via switch -> mode becomes off, command is disable
+    await hass.services.async_call("switch", "turn_off", {"entity_id": "switch.schedule_office"})
+    await hass.async_block_till_done()
+
+    mode_state = hass.states.get("sensor.office_mode")
+    assert mode_state.state == "off"
+
+    command_state = hass.states.get("sensor.office_last_command")
+    assert command_state.state == "disable"
+
+    # 8. Explicitly re-enable switch -> mode returns to auto-off (since lights are off)
+    await hass.services.async_call("switch", "turn_on", {"entity_id": "switch.schedule_office"})
+    await hass.async_block_till_done()
+
+    mode_state = hass.states.get("sensor.office_mode")
+    assert mode_state.state == "auto-off"
+
+    command_state = hass.states.get("sensor.office_last_command")
+    assert command_state.state == "enable"
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+
+async def test_diagnostic_entities_with_curves(hass: HomeAssistant) -> None:
+    """Test dim-to-warm and brightness curve binary sensors with configured curves."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Kitchen",
+        data={
+            CONF_NAME: "kitchen",
+            CONF_LIGHTS: ["light.kitchen_spot"],
+            CONF_CURVES: {
+                "warm_spots": {
+                    "lights": ["light.kitchen_spot"],
+                    "curve": [
+                        {"brightness": 1, "temp": 2000},
+                        {"brightness": 100, "temp": 4000},
+                    ],
+                }
+            },
+            CONF_BRIGHTNESS_CURVES: {
+                "spot_dist": {
+                    "lights": ["light.kitchen_spot"],
+                    "points": [[0, 0], [100, 100]],
+                }
+            },
+            CONF_SCHEDULE: [
+                {"time": "08:00", "brightness": 100},
+            ],
+        },
+    )
+    entry.add_to_hass(hass)
+    hass.states.async_set("light.kitchen_spot", "on")
+
+    assert await async_setup(hass, {})
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    dtw_sensor = hass.states.get("binary_sensor.kitchen_dim_to_warm_in_use")
+    assert dtw_sensor is not None
+    assert dtw_sensor.state == "on"
+    assert "warm_spots" in dtw_sensor.attributes["curves"]
+    assert "light.kitchen_spot" in dtw_sensor.attributes["lights"]
+    assert "light.kitchen_spot" in dtw_sensor.attributes["active_lights_on"]
+
+    b_curve_sensor = hass.states.get("binary_sensor.kitchen_brightness_curve_in_use")
+    assert b_curve_sensor is not None
+    assert b_curve_sensor.state == "on"
+    assert "spot_dist" in b_curve_sensor.attributes["curves"]
+    assert "light.kitchen_spot" in b_curve_sensor.attributes["lights"]
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+
+async def test_problem_binary_sensor_on_unavailable_light(hass: HomeAssistant) -> None:
+    """Test problem binary sensor triggers when light entity is unavailable."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Office",
+        data={
+            CONF_NAME: "office",
+            CONF_LIGHTS: ["light.office"],
+            CONF_SCHEDULE: [
+                {"time": "08:00", "brightness": 100, "temp": 4000},
+            ],
+        },
+    )
+    entry.add_to_hass(hass)
+
+    # Missing state in hass -> unavailable
+    assert await async_setup(hass, {})
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    problem_state = hass.states.get("binary_sensor.office_problem")
+    assert problem_state is not None
+    assert problem_state.state == "on"
+    assert "light.office" in problem_state.attributes["unavailable_lights"]
+
+    # Now make the light available (off)
+    hass.states.async_set("light.office", "off")
+    await hass.async_block_till_done()
+
+    # Trigger program check
+    program: ScheduledSceneProgram = hass.data[DOMAIN][entry.entry_id]
+    program._notify_listeners()
+    await hass.async_block_till_done()
+
+    problem_state = hass.states.get("binary_sensor.office_problem")
+    assert problem_state.state == "off"
+    assert problem_state.attributes["unavailable_lights"] == []
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+
+async def test_device_registry_grouping(hass: HomeAssistant) -> None:
+    """Test all room entities link to the unified device in DeviceRegistry."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Living Room",
+        data={
+            CONF_NAME: "living_room",
+            CONF_LIGHTS: ["light.lr_main"],
+            CONF_SCHEDULE: [
+                {"time": "08:00", "brightness": 100, "temp": 4000},
+            ],
+        },
+    )
+    entry.add_to_hass(hass)
+    hass.states.async_set("light.lr_main", "off")
+
+    assert await async_setup(hass, {})
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    device_registry = dr.async_get(hass)
+    device = device_registry.async_get_device(identifiers={(DOMAIN, entry.entry_id)})
+    assert device is not None
+    assert device.name == "Living Room"
+    assert device.manufacturer == "Scheduled Scenes"
+
+    entity_registry = er.async_get(hass)
+    expected_entities = [
+        "switch.schedule_living_room",
+        "sensor.living_room_schedule_phase",
+        "sensor.living_room_mode",
+        "sensor.living_room_current_brightness",
+        "sensor.living_room_last_command",
+        "binary_sensor.living_room_dim_to_warm_in_use",
+        "binary_sensor.living_room_brightness_curve_in_use",
+        "binary_sensor.living_room_problem",
+    ]
+
+    for ent_id in expected_entities:
+        reg_entry = entity_registry.async_get(ent_id)
+        assert reg_entry is not None, f"Entity {ent_id} not registered in entity registry"
+        assert reg_entry.device_id == device.id
 
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
