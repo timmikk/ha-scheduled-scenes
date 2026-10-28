@@ -1,22 +1,21 @@
 """Tests for coordinator runtime, services, and entity interactions."""
 
-from datetime import datetime
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from homeassistant.core import HomeAssistant, ServiceCall
-import homeassistant.util.dt as dt_util
 
-from custom_components.scheduled_scenes import async_setup, async_setup_entry, async_unload_entry
+from custom_components.scheduled_scenes import async_setup
 from custom_components.scheduled_scenes.const import (
+    CONF_CURVES,
     CONF_DISABLE_WHEN_LIGHTS_OFF,
     CONF_ENABLE_WHEN_LIGHT_TURN_ON,
     CONF_LIGHTS,
     CONF_NAME,
     CONF_SCHEDULE,
+    DEFAULT_COLOR_TEMP,
     DOMAIN,
     SERVICE_DISABLE,
     SERVICE_ENABLE,
-    SERVICE_TURN_OFF,
     SERVICE_TURN_ON,
 )
 from custom_components.scheduled_scenes.coordinator import ScheduledSceneProgram
@@ -54,6 +53,57 @@ async def test_coordinator_turn_on_and_off(hass: HomeAssistant) -> None:
         await program.async_turn_off(transition_time=1.0)
         assert program.enabled is False
         assert any(c[1] == "turn_off" and c[2]["entity_id"] == ["light.desk"] for c in calls)
+    finally:
+        await program.async_stop()
+
+
+async def test_coordinator_dim_to_warm_curves(hass: HomeAssistant) -> None:
+    """Test coordinator dim-to-warm curve resolution during transitions and service calls."""
+    config = {
+        CONF_NAME: "kitchen",
+        CONF_LIGHTS: ["light.spot_1", "light.spot_2", "light.regular"],
+        CONF_CURVES: {
+            "warm_glow_spots": {
+                "lights": ["light.spot_1", "light.spot_2"],
+                "curve": [
+                    {"brightness": 1, "temp": 2000},
+                    {"brightness": 50, "temp": 2700},
+                    {"brightness": 100, "temp": 4000},
+                ],
+            }
+        },
+        CONF_SCHEDULE: [
+            {"time": "00:00", "brightness": 50},  # temp omitted -> curve evaluates at 50% = 2700K
+            {"time": "23:59", "brightness": 50},
+        ],
+    }
+    program = ScheduledSceneProgram(hass, config)
+    await program.async_start()
+
+    calls = []
+
+    async def mock_service(call: ServiceCall):
+        calls.append((call.domain, call.service, dict(call.data)))
+
+    hass.services.async_register("light", "turn_on", mock_service)
+    hass.services.async_register("light", "turn_off", mock_service)
+
+    try:
+        # Turn On: spot_1 and spot_2 get curve temp 2700, regular gets DEFAULT_COLOR_TEMP 2700
+        await program.async_turn_on(transition_time=1.0)
+        assert len(calls) == 3
+
+        spot1_call = next(c for c in calls if c[2]["entity_id"] == "light.spot_1")
+        assert spot1_call[2]["brightness_pct"] == 50
+        assert spot1_call[2]["color_temp_kelvin"] == 2700
+
+        spot2_call = next(c for c in calls if c[2]["entity_id"] == "light.spot_2")
+        assert spot2_call[2]["brightness_pct"] == 50
+        assert spot2_call[2]["color_temp_kelvin"] == 2700
+
+        regular_call = next(c for c in calls if c[2]["entity_id"] == "light.regular")
+        assert regular_call[2]["brightness_pct"] == 50
+        assert regular_call[2]["color_temp_kelvin"] == DEFAULT_COLOR_TEMP
     finally:
         await program.async_stop()
 

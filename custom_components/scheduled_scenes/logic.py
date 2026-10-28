@@ -143,7 +143,7 @@ def parse_dim_to_warm_curves(
         if isinstance(raw_lights, str):
             lights = [raw_lights]
         elif isinstance(raw_lights, (list, tuple)):
-            lights = [str(l) for l in raw_lights]
+            lights = [str(lt) for lt in raw_lights]
         else:
             lights = []
 

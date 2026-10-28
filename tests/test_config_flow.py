@@ -8,6 +8,7 @@ from homeassistant.data_entry_flow import FlowResultType
 
 from custom_components.scheduled_scenes.const import (
     CONF_ALLOW_TURN_ON_IF_ANY_ON,
+    CONF_CURVES,
     CONF_DISABLE_WHEN_LIGHTS_OFF,
     CONF_ENABLE_WHEN_LIGHT_TURN_ON,
     CONF_LIGHTS,
@@ -49,6 +50,59 @@ async def test_config_flow_happy_path(hass: HomeAssistant) -> None:
     assert result2["title"] == "Living_Room"
     assert result2["data"][CONF_NAME] == "living_room"
     assert len(result2["data"][CONF_SCHEDULE]) == 2
+
+
+async def test_config_flow_with_curves(hass: HomeAssistant) -> None:
+    """Test config flow with dim-to-warm curves YAML."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    assert result["type"] is FlowResultType.FORM
+
+    schedule_yaml = """
+- time: "07:00"
+  brightness: 30
+- time: "19:00"
+  brightness: 80
+"""
+    curves_yaml = """
+warm_glow:
+  lights:
+    - light.spot_1
+  curve:
+    - [1, 2000]
+    - [100, 4000]
+"""
+    result2 = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_NAME: "dining_room",
+            CONF_LIGHTS: ["light.spot_1"],
+            CONF_SCHEDULE: schedule_yaml,
+            CONF_CURVES: curves_yaml,
+        },
+    )
+    assert result2["type"] is FlowResultType.CREATE_ENTRY
+    assert CONF_CURVES in result2["data"]
+    assert "warm_glow" in result2["data"][CONF_CURVES]
+
+
+async def test_config_flow_invalid_curves(hass: HomeAssistant) -> None:
+    """Test config flow with malformed curves YAML."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    result2 = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_NAME: "dining_room",
+            CONF_LIGHTS: ["light.spot_1"],
+            CONF_SCHEDULE: "- time: '08:00'\n  brightness: 100\n",
+            CONF_CURVES: "not: a: [valid, yaml: {",
+        },
+    )
+    assert result2["type"] is FlowResultType.FORM
+    assert result2["errors"][CONF_CURVES] == "invalid_curves"
 
 
 async def test_config_flow_invalid_schedule(hass: HomeAssistant) -> None:
@@ -94,7 +148,7 @@ async def test_config_flow_already_configured(hass: HomeAssistant) -> None:
 
 
 async def test_options_flow(hass: HomeAssistant) -> None:
-    """Test updating schedule via options flow."""
+    """Test updating schedule and curves via options flow."""
     entry = MockConfigEntry(
         domain=DOMAIN,
         title="Kitchen",
@@ -114,16 +168,20 @@ async def test_options_flow(hass: HomeAssistant) -> None:
     new_schedule = """
 - time: "07:00"
   brightness: 50
-  temp: 2700
 - time: "19:00"
   brightness: 80
-  temp: 3500
+"""
+    new_curves = """
+spots:
+  lights: [light.kitchen]
+  curve: [[1, 2200], [100, 3800]]
 """
     result2 = await hass.config_entries.options.async_configure(
         result["flow_id"],
         user_input={
             CONF_LIGHTS: ["light.kitchen", "light.island"],
             CONF_SCHEDULE: new_schedule,
+            CONF_CURVES: new_curves,
             CONF_TRANSITION_TIME: 60,
             CONF_TRANSITION_INTERVAL: 60,
             CONF_TRANSITION_TIME_ON_LIGHT_TURN_ON: 0.5,
@@ -135,6 +193,7 @@ async def test_options_flow(hass: HomeAssistant) -> None:
     )
     assert result2["type"] is FlowResultType.CREATE_ENTRY
     assert len(result2["data"][CONF_SCHEDULE]) == 2
+    assert "spots" in result2["data"][CONF_CURVES]
 
 async def test_config_flow_import_success(hass: HomeAssistant) -> None:
     """Test successful YAML import flow."""

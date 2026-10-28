@@ -8,14 +8,14 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.scheduled_scenes import (
     async_reload_entry,
     async_setup,
-    async_setup_entry,
-    async_unload_entry,
 )
 from custom_components.scheduled_scenes.const import (
     ATTR_DURATION,
     ATTR_TRANSITION,
+    CONF_CURVES,
     CONF_LIGHTS,
     CONF_NAME,
+    CONF_PROGRAMS,
     CONF_SCHEDULE,
     DOMAIN,
     SERVICE_DISABLE,
@@ -49,6 +49,38 @@ async def test_async_setup_with_yaml(hass: HomeAssistant) -> None:
         assert await async_setup(hass, yaml_config)
         await hass.async_block_till_done()
         assert mock_init.called
+
+
+async def test_async_setup_with_yaml_curves(hass: HomeAssistant) -> None:
+    """Test setup from YAML with global curves and programs."""
+    yaml_config = {
+        DOMAIN: {
+            CONF_CURVES: {
+                "warm_spots": {
+                    "lights": ["light.kitchen_spot"],
+                    "curve": [
+                        {"brightness": 1, "temp": 2000},
+                        {"brightness": 100, "temp": 4000},
+                    ],
+                }
+            },
+            CONF_PROGRAMS: [
+                {
+                    CONF_NAME: "kitchen",
+                    CONF_LIGHTS: ["light.kitchen_spot"],
+                    CONF_SCHEDULE: [
+                        {"time": "07:00", "brightness": 50},
+                    ],
+                }
+            ],
+        }
+    }
+    with patch.object(hass.config_entries.flow, "async_init") as mock_init:
+        assert await async_setup(hass, yaml_config)
+        await hass.async_block_till_done()
+        assert mock_init.called
+        call_args = mock_init.call_args[1]
+        assert call_args["data"][CONF_CURVES]["warm_spots"]["lights"] == ["light.kitchen_spot"]
 
 
 async def test_domain_services_and_legacy_aliases(hass: HomeAssistant) -> None:

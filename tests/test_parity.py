@@ -1,7 +1,6 @@
 """Parity tests validating the 5 production room schedules from pyscript/config.yaml."""
 
 from datetime import datetime
-import pytest
 
 from custom_components.scheduled_scenes.logic import (
     calculate_light_state,

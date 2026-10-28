@@ -1,7 +1,6 @@
 """Unit tests for the pure logic engine (custom_components/scheduled_scenes/logic.py)."""
 
 from datetime import datetime, time
-import pytest
 
 from custom_components.scheduled_scenes.logic import (
     DEFAULT_COLOR_TEMP,
