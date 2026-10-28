@@ -55,7 +55,7 @@ from .coordinator import ScheduledSceneProgram
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.SWITCH, Platform.SENSOR]
+PLATFORMS: list[Platform] = [Platform.SWITCH, Platform.SENSOR, Platform.BINARY_SENSOR]
 
 CURVES_SCHEMA = vol.Any(
     dict,
