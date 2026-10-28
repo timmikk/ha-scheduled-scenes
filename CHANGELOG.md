@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-28
+
 ### Added
 - Room brightness distribution curves (`brightness_curves`) mapping overall room brightness to fixture brightness with piecewise linear interpolation (task #2).
 - Smooth start brightness estimation via mathematical curve inversion, preventing sudden jumps or wrong-direction stepping when adjusting brightness from physical remotes or wall buttons (task #2).
