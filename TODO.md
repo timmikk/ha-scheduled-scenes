@@ -15,8 +15,3 @@ are read straight from the file. Entries are grouped by Category (fixed order fr
 
 ---
 
-## Features
-
-- [ ] **#1 dim to warm curves** — Add dim-to-warm curves for brightness-based
-  color temperature calculation `tasks/1-feature-dim-to-warm-curves.md`
-  **Status:** pending | **Priority:** medium | **Size:** M | **Mode:** auto | **Host:** all
