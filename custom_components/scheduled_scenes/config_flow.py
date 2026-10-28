@@ -23,6 +23,7 @@ from homeassistant.helpers.selector import (
 
 from .const import (
     CONF_ALLOW_TURN_ON_IF_ANY_ON,
+    CONF_BRIGHTNESS_CURVES,
     CONF_CURVES,
     CONF_DISABLE_WHEN_LIGHTS_OFF,
     CONF_ENABLE_WHEN_LIGHT_TURN_ON,
@@ -42,7 +43,11 @@ from .const import (
     DEFAULT_TRANSITION_TIME_ON_LIGHT_TURN_ON,
     DOMAIN,
 )
-from .logic import parse_dim_to_warm_curves, parse_schedule
+from .logic import (
+    parse_brightness_curves,
+    parse_dim_to_warm_curves,
+    parse_schedule,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -73,6 +78,10 @@ def _get_schema(defaults: dict[str, Any], is_options: bool = False) -> vol.Schem
     curves_val = defaults.get(CONF_CURVES, "")
     if isinstance(curves_val, (dict, list)):
         curves_val = yaml.dump(curves_val, sort_keys=False)
+
+    b_curves_val = defaults.get(CONF_BRIGHTNESS_CURVES, "")
+    if isinstance(b_curves_val, (dict, list)):
+        b_curves_val = yaml.dump(b_curves_val, sort_keys=False)
 
     schema: dict[Any, Any] = {}
     if not is_options:
@@ -166,6 +175,9 @@ def _get_schema(defaults: dict[str, Any], is_options: bool = False) -> vol.Schem
             vol.Optional(
                 CONF_CURVES, default=curves_val
             ): TextSelector(TextSelectorConfig(multiline=True)),
+            vol.Optional(
+                CONF_BRIGHTNESS_CURVES, default=b_curves_val
+            ): TextSelector(TextSelectorConfig(multiline=True)),
         }
     )
     return vol.Schema(schema)
@@ -216,6 +228,28 @@ def _validate_input(user_input: dict[str, Any]) -> tuple[dict[str, Any], dict[st
             cleaned[CONF_CURVES] = curves_raw
         except Exception:
             errors[CONF_CURVES] = "invalid_curves"
+
+    b_curves_raw = user_input.get(CONF_BRIGHTNESS_CURVES)
+    if isinstance(b_curves_raw, str):
+        b_curves_str = b_curves_raw.strip()
+        if b_curves_str:
+            try:
+                parsed_b_curves = yaml.safe_load(b_curves_str)
+                if parsed_b_curves:
+                    parse_brightness_curves(parsed_b_curves)
+                    cleaned[CONF_BRIGHTNESS_CURVES] = parsed_b_curves
+                else:
+                    cleaned.pop(CONF_BRIGHTNESS_CURVES, None)
+            except Exception:
+                errors[CONF_BRIGHTNESS_CURVES] = "invalid_brightness_curves"
+        else:
+            cleaned.pop(CONF_BRIGHTNESS_CURVES, None)
+    elif isinstance(b_curves_raw, (dict, list)):
+        try:
+            parse_brightness_curves(b_curves_raw)
+            cleaned[CONF_BRIGHTNESS_CURVES] = b_curves_raw
+        except Exception:
+            errors[CONF_BRIGHTNESS_CURVES] = "invalid_brightness_curves"
 
     return cleaned, errors
 

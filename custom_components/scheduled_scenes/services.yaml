@@ -66,6 +66,99 @@ disable:
           mode: box
           unit_of_measurement: min
 
+adjust_brightness:
+  name: Adjust brightness
+  description: Adjust or set room brightness, pausing automatic schedule transitions.
+  target:
+    entity:
+      domain: switch
+      integration: scheduled_scenes
+  fields:
+    step:
+      name: Step
+      description: Relative brightness percentage change (+/- percentage, e.g. 10 or -10).
+      example: 10
+      selector:
+        number:
+          min: -100
+          max: 100
+          step: 1
+          mode: box
+          unit_of_measurement: "%"
+    brightness:
+      name: Brightness
+      description: Absolute target room brightness percentage (0-100%).
+      example: 50
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          mode: slider
+          unit_of_measurement: "%"
+    transition:
+      name: Transition
+      description: Optional transition time in seconds.
+      example: 0.5
+      selector:
+        number:
+          min: 0
+          max: 300
+          step: 0.1
+          mode: box
+          unit_of_measurement: s
+
+step_brightness:
+  name: Step brightness
+  description: Step room brightness up or down (alias for adjust_brightness).
+  target:
+    entity:
+      domain: switch
+      integration: scheduled_scenes
+  fields:
+    step:
+      name: Step
+      description: Relative brightness percentage change (+/- percentage, e.g. 10 or -10).
+      example: 10
+      selector:
+        number:
+          min: -100
+          max: 100
+          step: 1
+          mode: box
+          unit_of_measurement: "%"
+    transition:
+      name: Transition
+      description: Optional transition time in seconds.
+      example: 0.5
+      selector:
+        number:
+          min: 0
+          max: 300
+          step: 0.1
+          mode: box
+          unit_of_measurement: s
+
+resume_schedule:
+  name: Resume schedule
+  description: Clear manual brightness override and resume automatic schedule transitions.
+  target:
+    entity:
+      domain: switch
+      integration: scheduled_scenes
+  fields:
+    transition:
+      name: Transition
+      description: Optional transition time in seconds.
+      example: 0.5
+      selector:
+        number:
+          min: 0
+          max: 300
+          step: 0.1
+          mode: box
+          unit_of_measurement: s
+
 reload:
   name: Reload
   description: Reload scheduled_scenes YAML configuration without restarting Home Assistant.

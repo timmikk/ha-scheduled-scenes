@@ -52,6 +52,8 @@ class ScheduledSceneSensor(SensorEntity):
             "enabled": self.program.enabled,
             "lights": self.program.lights,
             "any_light_on": self.program.is_any_light_on(),
+            "manual_override": self.program.manual_brightness is not None,
+            "manual_brightness": self.program.manual_brightness,
         }
         t = self.program.current_transition
         if t is not None:

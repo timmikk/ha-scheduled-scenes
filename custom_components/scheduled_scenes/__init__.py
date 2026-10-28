@@ -14,13 +14,18 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.reload import async_integration_yaml_config
 
 from .const import (
+    ATTR_BRIGHTNESS,
+    ATTR_BRIGHTNESS_PCT,
     ATTR_DURATION,
+    ATTR_STEP,
     ATTR_TRANSITION,
     CONF_ALLOW_TURN_ON_IF_ANY_ON,
+    CONF_BRIGHTNESS_CURVES,
     CONF_CURVES,
     CONF_DISABLE_WHEN_LIGHTS_OFF,
     CONF_ENABLE_WHEN_LIGHT_TURN_ON,
     CONF_LIGHTS,
+    CONF_MANUAL_OVERRIDE_TIMEOUT,
     CONF_NAME,
     CONF_PROGRAMS,
     CONF_SCHEDULE,
@@ -31,14 +36,18 @@ from .const import (
     DEFAULT_ALLOW_TURN_ON_IF_ANY_ON,
     DEFAULT_DISABLE_WHEN_LIGHTS_OFF,
     DEFAULT_ENABLE_WHEN_LIGHT_TURN_ON,
+    DEFAULT_MANUAL_OVERRIDE_TIMEOUT,
     DEFAULT_TRANSITION_INTERVAL,
     DEFAULT_TRANSITION_TIME,
     DEFAULT_TRANSITION_TIME_ON,
     DEFAULT_TRANSITION_TIME_ON_LIGHT_TURN_ON,
     DOMAIN,
+    SERVICE_ADJUST_BRIGHTNESS,
     SERVICE_DISABLE,
     SERVICE_ENABLE,
     SERVICE_RELOAD,
+    SERVICE_RESUME_SCHEDULE,
+    SERVICE_STEP_BRIGHTNESS,
     SERVICE_TURN_OFF,
     SERVICE_TURN_ON,
 )
@@ -49,6 +58,11 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS: list[Platform] = [Platform.SWITCH, Platform.SENSOR]
 
 CURVES_SCHEMA = vol.Any(
+    dict,
+    vol.All(cv.ensure_list, [dict]),
+)
+
+BRIGHTNESS_CURVES_SCHEMA = vol.Any(
     dict,
     vol.All(cv.ensure_list, [dict]),
 )
@@ -77,7 +91,11 @@ PROGRAM_SCHEMA = vol.Schema(
         vol.Optional(
             CONF_ALLOW_TURN_ON_IF_ANY_ON, default=DEFAULT_ALLOW_TURN_ON_IF_ANY_ON
         ): cv.boolean,
+        vol.Optional(
+            CONF_MANUAL_OVERRIDE_TIMEOUT, default=DEFAULT_MANUAL_OVERRIDE_TIMEOUT
+        ): vol.Coerce(float),
         vol.Optional(CONF_CURVES): CURVES_SCHEMA,
+        vol.Optional(CONF_BRIGHTNESS_CURVES): BRIGHTNESS_CURVES_SCHEMA,
         vol.Required(CONF_SCHEDULE): vol.All(cv.ensure_list, [dict]),
     }
 )
@@ -91,6 +109,7 @@ CONFIG_SCHEMA = vol.Schema(
             vol.Schema(
                 {
                     vol.Optional(CONF_CURVES): CURVES_SCHEMA,
+                    vol.Optional(CONF_BRIGHTNESS_CURVES): BRIGHTNESS_CURVES_SCHEMA,
                     vol.Optional(CONF_PROGRAMS): PROGRAMS_LIST_SCHEMA,
                     vol.Optional("rooms"): PROGRAMS_LIST_SCHEMA,
                 },
@@ -107,6 +126,7 @@ def _resolve_programs_and_curves(
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Extract global curves and program configs from domain configuration."""
     global_curves: dict[str, Any] = {}
+    global_b_curves: dict[str, Any] = {}
     programs: list[dict[str, Any]] = []
 
     if isinstance(domain_conf, list):
@@ -115,6 +135,9 @@ def _resolve_programs_and_curves(
         curves = domain_conf.get(CONF_CURVES)
         if isinstance(curves, (dict, list)):
             global_curves = curves
+        b_curves = domain_conf.get(CONF_BRIGHTNESS_CURVES)
+        if isinstance(b_curves, (dict, list)):
+            global_b_curves = b_curves
         programs = domain_conf.get(CONF_PROGRAMS, domain_conf.get("rooms", []))
 
     resolved_programs: list[dict[str, Any]] = []
@@ -125,6 +148,11 @@ def _resolve_programs_and_curves(
                 data[CONF_CURVES] = global_curves
             elif isinstance(data[CONF_CURVES], dict) and isinstance(global_curves, dict):
                 data[CONF_CURVES] = {**global_curves, **data[CONF_CURVES]}
+        if global_b_curves:
+            if CONF_BRIGHTNESS_CURVES not in data:
+                data[CONF_BRIGHTNESS_CURVES] = global_b_curves
+            elif isinstance(data[CONF_BRIGHTNESS_CURVES], dict) and isinstance(global_b_curves, dict):
+                data[CONF_BRIGHTNESS_CURVES] = {**global_b_curves, **data[CONF_BRIGHTNESS_CURVES]}
         resolved_programs.append(data)
 
     return global_curves, resolved_programs
@@ -185,8 +213,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 def _get_programs(hass: HomeAssistant, call: ServiceCall) -> list[ScheduledSceneProgram]:
     """Resolve target programs from service call target or all entries."""
     store = hass.data.get(DOMAIN, {})
-    programs: list[ScheduledSceneProgram] = [\
-        p for k, p in store.items() if isinstance(p, ScheduledSceneProgram)\
+    programs: list[ScheduledSceneProgram] = [
+        p for k, p in store.items() if isinstance(p, ScheduledSceneProgram)
     ]
 
     target_entities = call.data.get("entity_id")
@@ -233,6 +261,20 @@ def _register_services(hass: HomeAssistant) -> None:
         for prog in _get_programs(hass, call):
             prog.set_enabled(False, duration=duration)
 
+    async def _handle_adjust_brightness(call: ServiceCall) -> None:
+        step = call.data.get(ATTR_STEP)
+        brightness = call.data.get(ATTR_BRIGHTNESS, call.data.get(ATTR_BRIGHTNESS_PCT))
+        transition = call.data.get(ATTR_TRANSITION)
+        for prog in _get_programs(hass, call):
+            await prog.async_adjust_brightness(
+                step=step, brightness=brightness, transition=transition
+            )
+
+    async def _handle_resume_schedule(call: ServiceCall) -> None:
+        transition = call.data.get(ATTR_TRANSITION)
+        for prog in _get_programs(hass, call):
+            await prog.async_resume_schedule(transition_time=transition)
+
     async def _handle_reload(_call: ServiceCall) -> None:
         conf = await async_integration_yaml_config(hass, DOMAIN)
         if conf and DOMAIN in conf:
@@ -248,6 +290,9 @@ def _register_services(hass: HomeAssistant) -> None:
     hass.services.async_register(DOMAIN, SERVICE_TURN_OFF, _handle_turn_off)
     hass.services.async_register(DOMAIN, SERVICE_ENABLE, _handle_enable)
     hass.services.async_register(DOMAIN, SERVICE_DISABLE, _handle_disable)
+    hass.services.async_register(DOMAIN, SERVICE_ADJUST_BRIGHTNESS, _handle_adjust_brightness)
+    hass.services.async_register(DOMAIN, SERVICE_STEP_BRIGHTNESS, _handle_adjust_brightness)
+    hass.services.async_register(DOMAIN, SERVICE_RESUME_SCHEDULE, _handle_resume_schedule)
     hass.services.async_register(DOMAIN, SERVICE_RELOAD, _handle_reload)
 
 
@@ -269,10 +314,22 @@ def _register_program_aliases(hass: HomeAssistant, program: ScheduledSceneProgra
     async def _alias_disable(call: ServiceCall) -> None:
         program.set_enabled(False, duration=int(call.data.get(ATTR_DURATION, 0)))
 
+    async def _alias_adjust_brightness(call: ServiceCall) -> None:
+        step = call.data.get(ATTR_STEP)
+        brightness = call.data.get(ATTR_BRIGHTNESS, call.data.get(ATTR_BRIGHTNESS_PCT))
+        transition = call.data.get(ATTR_TRANSITION)
+        await program.async_adjust_brightness(step=step, brightness=brightness, transition=transition)
+
+    async def _alias_resume_schedule(call: ServiceCall) -> None:
+        await program.async_resume_schedule(transition_time=call.data.get(ATTR_TRANSITION))
+
     hass.services.async_register(DOMAIN, f"{name}_turn_on", _alias_turn_on)
     hass.services.async_register(DOMAIN, f"{name}_turn_off", _alias_turn_off)
     hass.services.async_register(DOMAIN, f"{name}_enable", _alias_enable)
     hass.services.async_register(DOMAIN, f"{name}_disable", _alias_disable)
+    hass.services.async_register(DOMAIN, f"{name}_adjust_brightness", _alias_adjust_brightness)
+    hass.services.async_register(DOMAIN, f"{name}_step_brightness", _alias_adjust_brightness)
+    hass.services.async_register(DOMAIN, f"{name}_resume_schedule", _alias_resume_schedule)
 
 
 def _unregister_program_aliases(hass: HomeAssistant, program: ScheduledSceneProgram) -> None:
@@ -285,3 +342,6 @@ def _unregister_program_aliases(hass: HomeAssistant, program: ScheduledSceneProg
     hass.services.async_remove(DOMAIN, f"{name}_turn_off")
     hass.services.async_remove(DOMAIN, f"{name}_enable")
     hass.services.async_remove(DOMAIN, f"{name}_disable")
+    hass.services.async_remove(DOMAIN, f"{name}_adjust_brightness")
+    hass.services.async_remove(DOMAIN, f"{name}_step_brightness")
+    hass.services.async_remove(DOMAIN, f"{name}_resume_schedule")

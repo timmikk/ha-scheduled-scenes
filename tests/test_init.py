@@ -10,17 +10,23 @@ from custom_components.scheduled_scenes import (
     async_setup,
 )
 from custom_components.scheduled_scenes.const import (
+    ATTR_BRIGHTNESS,
     ATTR_DURATION,
+    ATTR_STEP,
     ATTR_TRANSITION,
+    CONF_BRIGHTNESS_CURVES,
     CONF_CURVES,
     CONF_LIGHTS,
     CONF_NAME,
     CONF_PROGRAMS,
     CONF_SCHEDULE,
     DOMAIN,
+    SERVICE_ADJUST_BRIGHTNESS,
     SERVICE_DISABLE,
     SERVICE_ENABLE,
     SERVICE_RELOAD,
+    SERVICE_RESUME_SCHEDULE,
+    SERVICE_STEP_BRIGHTNESS,
     SERVICE_TURN_OFF,
     SERVICE_TURN_ON,
 )
@@ -64,6 +70,12 @@ async def test_async_setup_with_yaml_curves(hass: HomeAssistant) -> None:
                     ],
                 }
             },
+            CONF_BRIGHTNESS_CURVES: {
+                "spot_curve": {
+                    "lights": ["light.kitchen_spot"],
+                    "points": [[0, 0], [100, 100]],
+                }
+            },
             CONF_PROGRAMS: [
                 {
                     CONF_NAME: "kitchen",
@@ -81,6 +93,7 @@ async def test_async_setup_with_yaml_curves(hass: HomeAssistant) -> None:
         assert mock_init.called
         call_args = mock_init.call_args[1]
         assert call_args["data"][CONF_CURVES]["warm_spots"]["lights"] == ["light.kitchen_spot"]
+        assert call_args["data"][CONF_BRIGHTNESS_CURVES]["spot_curve"]["lights"] == ["light.kitchen_spot"]
 
 
 async def test_domain_services_and_legacy_aliases(hass: HomeAssistant) -> None:
@@ -142,6 +155,68 @@ async def test_domain_services_and_legacy_aliases(hass: HomeAssistant) -> None:
         {"entity_id": "switch.schedule_bedroom"},
     )
     await hass.async_block_till_done()
+
+    # Domain adjust_brightness
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_ADJUST_BRIGHTNESS,
+        {"entity_id": "switch.schedule_bedroom", ATTR_STEP: 15, ATTR_TRANSITION: 0.5},
+    )
+    await hass.async_block_till_done()
+    sensor_state = hass.states.get("sensor.bedroom_schedule_phase")
+    assert sensor_state.attributes.get("manual_override") is True
+    assert sensor_state.attributes.get("manual_brightness") == 15
+
+    # Domain step_brightness alias
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_STEP_BRIGHTNESS,
+        {"entity_id": "switch.schedule_bedroom", ATTR_STEP: 10},
+    )
+    await hass.async_block_till_done()
+    sensor_state = hass.states.get("sensor.bedroom_schedule_phase")
+    assert sensor_state.attributes.get("manual_brightness") == 25
+
+    # Domain resume_schedule
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_RESUME_SCHEDULE,
+        {"entity_id": "switch.schedule_bedroom"},
+    )
+    await hass.async_block_till_done()
+    sensor_state = hass.states.get("sensor.bedroom_schedule_phase")
+    assert sensor_state.attributes.get("manual_override") is False
+    assert sensor_state.attributes.get("manual_brightness") is None
+
+    # Alias adjust_brightness
+    await hass.services.async_call(
+        DOMAIN,
+        "bedroom_adjust_brightness",
+        {ATTR_BRIGHTNESS: 80},
+    )
+    await hass.async_block_till_done()
+    sensor_state = hass.states.get("sensor.bedroom_schedule_phase")
+    assert sensor_state.attributes.get("manual_brightness") == 80
+
+    # Alias step_brightness
+    await hass.services.async_call(
+        DOMAIN,
+        "bedroom_step_brightness",
+        {ATTR_STEP: -20},
+    )
+    await hass.async_block_till_done()
+    sensor_state = hass.states.get("sensor.bedroom_schedule_phase")
+    assert sensor_state.attributes.get("manual_brightness") == 60
+
+    # Alias resume_schedule
+    await hass.services.async_call(
+        DOMAIN,
+        "bedroom_resume_schedule",
+        {},
+    )
+    await hass.async_block_till_done()
+    sensor_state = hass.states.get("sensor.bedroom_schedule_phase")
+    assert sensor_state.attributes.get("manual_brightness") is None
 
     # Alias turn_on with transition
     await hass.services.async_call(

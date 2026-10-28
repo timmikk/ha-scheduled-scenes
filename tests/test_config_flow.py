@@ -8,6 +8,7 @@ from homeassistant.data_entry_flow import FlowResultType
 
 from custom_components.scheduled_scenes.const import (
     CONF_ALLOW_TURN_ON_IF_ANY_ON,
+    CONF_BRIGHTNESS_CURVES,
     CONF_CURVES,
     CONF_DISABLE_WHEN_LIGHTS_OFF,
     CONF_ENABLE_WHEN_LIGHT_TURN_ON,
@@ -176,12 +177,18 @@ spots:
   lights: [light.kitchen]
   curve: [[1, 2200], [100, 3800]]
 """
+    new_b_curves = """
+accent:
+  lights: [light.island]
+  points: [[0, 0], [50, 100], [100, 100]]
+"""
     result2 = await hass.config_entries.options.async_configure(
         result["flow_id"],
         user_input={
             CONF_LIGHTS: ["light.kitchen", "light.island"],
             CONF_SCHEDULE: new_schedule,
             CONF_CURVES: new_curves,
+            CONF_BRIGHTNESS_CURVES: new_b_curves,
             CONF_TRANSITION_TIME: 60,
             CONF_TRANSITION_INTERVAL: 60,
             CONF_TRANSITION_TIME_ON_LIGHT_TURN_ON: 0.5,
@@ -194,6 +201,7 @@ spots:
     assert result2["type"] is FlowResultType.CREATE_ENTRY
     assert len(result2["data"][CONF_SCHEDULE]) == 2
     assert "spots" in result2["data"][CONF_CURVES]
+    assert "accent" in result2["data"][CONF_BRIGHTNESS_CURVES]
 
 async def test_config_flow_import_success(hass: HomeAssistant) -> None:
     """Test successful YAML import flow."""
