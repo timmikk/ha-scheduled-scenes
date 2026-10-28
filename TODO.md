@@ -15,8 +15,3 @@ are read straight from the file. Entries are grouped by Category (fixed order fr
 
 ---
 
-## Features
-
-- [ ] **#2 brightness control** — Add room brightness stepping, estimation, and
-  brightness distribution curves `tasks/2-feature-brightness-control.md`
-  **Status:** pending | **Priority:** medium | **Size:** M | **Mode:** auto | **Host:** all
