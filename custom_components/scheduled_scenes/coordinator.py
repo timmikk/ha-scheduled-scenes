@@ -109,6 +109,14 @@ class ScheduledSceneProgram:
         self.current_transition: ActiveTransition | None = None
         self._listeners: list[Callable[[], None]] = []
 
+        self.last_command: str = "none"
+        self.last_command_timestamp: datetime | None = None
+        self.last_command_details: dict[str, Any] = {}
+        self._auto_disabled_by_lights_off: bool = False
+        self.last_error: str | None = None
+        self.last_error_timestamp: datetime | None = None
+        self.error_count: int = 0
+
         self._unsub_interval: CALLBACK_TYPE | None = None
         self._unsub_state_change: CALLBACK_TYPE | None = None
         self._unsub_disable_timer: CALLBACK_TYPE | None = None
@@ -128,6 +136,104 @@ class ScheduledSceneProgram:
         """Notify registered entity listeners."""
         for update_callback in self._listeners:
             update_callback()
+
+    def _record_command(self, command: str, details: dict[str, Any] | None = None) -> None:
+        """Record the last executed command with timestamp and details."""
+        self.last_command = command
+        self.last_command_timestamp = dt_util.now()
+        self.last_command_details = details or {}
+
+    async def _async_call_service(
+        self, domain: str, service: str, service_data: dict[str, Any]
+    ) -> None:
+        """Call a service safely and record any exceptions."""
+        try:
+            await self.hass.services.async_call(
+                domain,
+                service,
+                service_data,
+                blocking=False,
+            )
+        except Exception as err:
+            self.last_error = str(err)
+            self.last_error_timestamp = dt_util.now()
+            self.error_count += 1
+            _LOGGER.error(
+                "Program [%s] error calling service %s.%s: %s",
+                self.name,
+                domain,
+                service,
+                err,
+            )
+
+    @property
+    def mode(self) -> str:
+        """Return current operational mode: off, auto-off, auto, or manual."""
+        if not self.enabled:
+            if self._auto_disabled_by_lights_off:
+                return "auto-off"
+            return "off"
+        if self.manual_brightness is not None:
+            return "manual"
+        if not self.is_any_light_on():
+            return "auto-off"
+        return "auto"
+
+    def get_current_room_brightness(self) -> int:
+        """Estimate or calculate current room brightness percentage (0-100%)."""
+        if self.manual_brightness is not None:
+            return self.manual_brightness
+
+        if not self.is_any_light_on():
+            return 0
+
+        current_states: dict[str, int] = {}
+        for light_id in self.lights:
+            st = self.hass.states.get(light_id)
+            if st is not None and st.state == "on":
+                raw_b = st.attributes.get("brightness")
+                if raw_b is not None:
+                    current_states[light_id] = round((int(raw_b) / 255) * 100)
+                else:
+                    current_states[light_id] = 100
+
+        if current_states:
+            return estimate_room_brightness(current_states, self.light_brightness_curves)
+
+        return 0
+
+    def get_unavailable_lights(self) -> list[str]:
+        """Return list of light entities that are unavailable or missing."""
+        unavailable: list[str] = []
+        for light_id in self.lights:
+            st = self.hass.states.get(light_id)
+            if st is None or st.state in ("unavailable", "unknown"):
+                unavailable.append(light_id)
+        return unavailable
+
+    @property
+    def is_problem(self) -> bool:
+        """Return True if there is an active problem with the program."""
+        if not self.schedule:
+            return True
+        if bool(self.get_unavailable_lights()):
+            return True
+        return False
+
+    @property
+    def is_dim_to_warm_in_use(self) -> bool:
+        """Return True if dim-to-warm curves are configured for this program."""
+        return bool(self.light_curves)
+
+    @property
+    def is_brightness_curve_in_use(self) -> bool:
+        """Return True if brightness distribution curves are configured for this program."""
+        return bool(self.light_brightness_curves)
+
+    def is_light_on(self, entity_id: str) -> bool:
+        """Return True if specific light entity is on."""
+        st = self.hass.states.get(entity_id)
+        return st is not None and st.state == "on"
 
     async def async_start(self) -> None:
         """Start listening to state changes and periodic interval timers."""
@@ -189,9 +295,12 @@ class ScheduledSceneProgram:
         if new_state is None:
             return
 
+        entity_id = event.data.get("entity_id", "")
         val = new_state.state
         if val == "on":
+            self._auto_disabled_by_lights_off = False
             if self.enable_when_light_turn_on:
+                self._record_command("auto on", {"trigger": "light_turn_on", "light": entity_id})
                 if self.allow_turn_on_if_any_on:
                     await self.async_turn_on()
                 else:
@@ -199,18 +308,26 @@ class ScheduledSceneProgram:
                     await self.async_transition(
                         transition_time_override=self.transition_time_light_on_trigger
                     )
+            else:
+                self._notify_listeners()
         elif val in ("off", "unavailable"):
             if not self.is_any_light_on():
                 self.manual_brightness = None
                 if self._unsub_override_timer:
                     self._unsub_override_timer()
                     self._unsub_override_timer = None
+                self._record_command("auto off", {"trigger": "lights_off"})
                 if self.disable_when_lights_off:
-                    self.set_enabled(False)
+                    self.set_enabled(False, auto_disabled=True)
+                else:
+                    self._notify_listeners()
+            else:
+                self._notify_listeners()
 
     async def _async_periodic_callback(self, now: datetime) -> None:
         """Periodic timer callback."""
         if self.enabled and self.manual_brightness is None:
+            self._record_command("periodic update", {"time": now.isoformat()})
             await self.async_transition()
 
     async def async_transition(
@@ -259,7 +376,7 @@ class ScheduledSceneProgram:
                     temp,
                     curve_info.name if curve_info else None,
                 )
-                await self.hass.services.async_call(
+                await self._async_call_service(
                     "light",
                     "turn_on",
                     {
@@ -268,7 +385,6 @@ class ScheduledSceneProgram:
                         "color_temp_kelvin": temp,
                         "transition": transition_seconds,
                     },
-                    blocking=False,
                 )
 
         self._notify_listeners()
@@ -280,6 +396,7 @@ class ScheduledSceneProgram:
         transition: float | None = None,
     ) -> None:
         """Adjust or set room brightness, pausing automatic schedule transitions."""
+        self._auto_disabled_by_lights_off = False
         if step is None and brightness is None:
             step = 10
 
@@ -327,13 +444,22 @@ class ScheduledSceneProgram:
 
         t_time = transition if transition is not None else self.transition_time_on
 
+        if brightness is not None:
+            self._record_command(
+                "set brightness", {"target_brightness": target_b, "transition": t_time}
+            )
+        else:
+            self._record_command(
+                "step brightness",
+                {"step": step, "target_brightness": target_b, "transition": t_time},
+            )
+
         if target_b == 0:
             if self.lights:
-                await self.hass.services.async_call(
+                await self._async_call_service(
                     "light",
                     "turn_off",
                     {"entity_id": self.lights, "transition": t_time},
-                    blocking=False,
                 )
         else:
             for light_id in self.lights:
@@ -344,14 +470,13 @@ class ScheduledSceneProgram:
                     self.light_curves,
                 )
                 if light_b <= 0:
-                    await self.hass.services.async_call(
+                    await self._async_call_service(
                         "light",
                         "turn_off",
                         {"entity_id": light_id, "transition": t_time},
-                        blocking=False,
                     )
                 else:
-                    await self.hass.services.async_call(
+                    await self._async_call_service(
                         "light",
                         "turn_on",
                         {
@@ -360,7 +485,6 @@ class ScheduledSceneProgram:
                             "color_temp_kelvin": light_temp,
                             "transition": t_time,
                         },
-                        blocking=False,
                     )
 
         self._notify_listeners()
@@ -371,50 +495,61 @@ class ScheduledSceneProgram:
             self._unsub_override_timer()
             self._unsub_override_timer = None
 
-        self.manual_brightness = None
+        self._auto_disabled_by_lights_off = False
         t_time = transition_time if transition_time is not None else self.transition_time_on
+        self._record_command("resume schedule", {"transition": t_time})
+        self.manual_brightness = None
         if self.enabled:
             await self.async_transition(transition_time_override=t_time)
         self._notify_listeners()
 
     async def async_turn_on(self, transition_time: float | None = None) -> None:
         """Turn on all program lights with current schedule parameters."""
+        self._auto_disabled_by_lights_off = False
+        t_time = transition_time if transition_time is not None else self.transition_time_on
+        self._record_command("turn on", {"transition": t_time})
         self.manual_brightness = None
         if self._unsub_override_timer:
             self._unsub_override_timer()
             self._unsub_override_timer = None
         self.set_enabled(True)
-        t_time = transition_time if transition_time is not None else self.transition_time_on
         await self.async_transition(transition_time_override=t_time, allow_turn_lights_on=True)
 
     async def async_turn_off(self, transition_time: float | None = None) -> None:
         """Turn off all lights in the program and disable the schedule."""
+        self._auto_disabled_by_lights_off = False
+        t_time = transition_time if transition_time is not None else self.transition_time_on
+        self._record_command("turn off", {"transition": t_time})
         self.manual_brightness = None
         if self._unsub_override_timer:
             self._unsub_override_timer()
             self._unsub_override_timer = None
         self.set_enabled(False)
-        t_time = transition_time if transition_time is not None else self.transition_time_on
         if self.lights:
-            await self.hass.services.async_call(
+            await self._async_call_service(
                 "light",
                 "turn_off",
                 {"entity_id": self.lights, "transition": t_time},
-                blocking=False,
             )
         self._notify_listeners()
 
-    def set_enabled(self, enabled: bool, duration: int = 0) -> None:
+    def set_enabled(self, enabled: bool, duration: int = 0, auto_disabled: bool = False) -> None:
         """Enable or disable the program, with optional auto-enable timer."""
         if self._unsub_disable_timer:
             self._unsub_disable_timer()
             self._unsub_disable_timer = None
+
+        self._auto_disabled_by_lights_off = auto_disabled
 
         if enabled:
             self.manual_brightness = None
             if self._unsub_override_timer:
                 self._unsub_override_timer()
                 self._unsub_override_timer = None
+            self._record_command("enable", {"duration": duration} if duration > 0 else None)
+        else:
+            if not auto_disabled:
+                self._record_command("disable", {"duration": duration} if duration > 0 else None)
 
         self.enabled = enabled
 
