@@ -17,10 +17,12 @@ from .const import (
     ATTR_DURATION,
     ATTR_TRANSITION,
     CONF_ALLOW_TURN_ON_IF_ANY_ON,
+    CONF_CURVES,
     CONF_DISABLE_WHEN_LIGHTS_OFF,
     CONF_ENABLE_WHEN_LIGHT_TURN_ON,
     CONF_LIGHTS,
     CONF_NAME,
+    CONF_PROGRAMS,
     CONF_SCHEDULE,
     CONF_TRANSITION_INTERVAL,
     CONF_TRANSITION_TIME,
@@ -46,6 +48,11 @@ _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.SWITCH, Platform.SENSOR]
 
+CURVES_SCHEMA = vol.Any(
+    dict,
+    vol.All(cv.ensure_list, [dict]),
+)
+
 PROGRAM_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_NAME): cv.string,
@@ -70,14 +77,57 @@ PROGRAM_SCHEMA = vol.Schema(
         vol.Optional(
             CONF_ALLOW_TURN_ON_IF_ANY_ON, default=DEFAULT_ALLOW_TURN_ON_IF_ANY_ON
         ): cv.boolean,
+        vol.Optional(CONF_CURVES): CURVES_SCHEMA,
         vol.Required(CONF_SCHEDULE): vol.All(cv.ensure_list, [dict]),
     }
 )
 
+PROGRAMS_LIST_SCHEMA = vol.All(cv.ensure_list, [PROGRAM_SCHEMA])
+
 CONFIG_SCHEMA = vol.Schema(
-    {DOMAIN: vol.All(cv.ensure_list, [PROGRAM_SCHEMA])},
+    {
+        DOMAIN: vol.Any(
+            PROGRAMS_LIST_SCHEMA,
+            vol.Schema(
+                {
+                    vol.Optional(CONF_CURVES): CURVES_SCHEMA,
+                    vol.Optional(CONF_PROGRAMS): PROGRAMS_LIST_SCHEMA,
+                    vol.Optional("rooms"): PROGRAMS_LIST_SCHEMA,
+                },
+                extra=vol.ALLOW_EXTRA,
+            ),
+        )
+    },
     extra=vol.ALLOW_EXTRA,
 )
+
+
+def _resolve_programs_and_curves(
+    domain_conf: Any,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Extract global curves and program configs from domain configuration."""
+    global_curves: dict[str, Any] = {}
+    programs: list[dict[str, Any]] = []
+
+    if isinstance(domain_conf, list):
+        programs = domain_conf
+    elif isinstance(domain_conf, dict):
+        curves = domain_conf.get(CONF_CURVES)
+        if isinstance(curves, (dict, list)):
+            global_curves = curves
+        programs = domain_conf.get(CONF_PROGRAMS, domain_conf.get("rooms", []))
+
+    resolved_programs: list[dict[str, Any]] = []
+    for prog_conf in programs:
+        data = dict(prog_conf)
+        if global_curves:
+            if CONF_CURVES not in data:
+                data[CONF_CURVES] = global_curves
+            elif isinstance(data[CONF_CURVES], dict) and isinstance(global_curves, dict):
+                data[CONF_CURVES] = {**global_curves, **data[CONF_CURVES]}
+        resolved_programs.append(data)
+
+    return global_curves, resolved_programs
 
 
 async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
@@ -87,7 +137,8 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     _register_services(hass)
 
     if DOMAIN in config:
-        for prog_conf in config[DOMAIN]:
+        _, programs = _resolve_programs_and_curves(config[DOMAIN])
+        for prog_conf in programs:
             hass.async_create_task(
                 hass.config_entries.flow.async_init(
                     DOMAIN,
@@ -134,8 +185,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 def _get_programs(hass: HomeAssistant, call: ServiceCall) -> list[ScheduledSceneProgram]:
     """Resolve target programs from service call target or all entries."""
     store = hass.data.get(DOMAIN, {})
-    programs: list[ScheduledSceneProgram] = [
-        p for k, p in store.items() if isinstance(p, ScheduledSceneProgram)
+    programs: list[ScheduledSceneProgram] = [\
+        p for k, p in store.items() if isinstance(p, ScheduledSceneProgram)\
     ]
 
     target_entities = call.data.get("entity_id")
@@ -185,7 +236,8 @@ def _register_services(hass: HomeAssistant) -> None:
     async def _handle_reload(_call: ServiceCall) -> None:
         conf = await async_integration_yaml_config(hass, DOMAIN)
         if conf and DOMAIN in conf:
-            for prog_conf in conf[DOMAIN]:
+            _, programs = _resolve_programs_and_curves(conf[DOMAIN])
+            for prog_conf in programs:
                 await hass.config_entries.flow.async_init(
                     DOMAIN,
                     context={"source": SOURCE_IMPORT},

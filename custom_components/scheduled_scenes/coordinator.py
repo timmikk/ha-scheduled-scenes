@@ -17,6 +17,7 @@ import homeassistant.util.dt as dt_util
 
 from .const import (
     CONF_ALLOW_TURN_ON_IF_ANY_ON,
+    CONF_CURVES,
     CONF_DISABLE_WHEN_LIGHTS_OFF,
     CONF_ENABLE_WHEN_LIGHT_TURN_ON,
     CONF_LIGHTS,
@@ -36,9 +37,11 @@ from .const import (
 )
 from .logic import (
     ActiveTransition,
+    DimToWarmCurve,
     ScheduleStep,
     calculate_light_state,
     calculate_transition_seconds,
+    parse_dim_to_warm_curves,
     parse_schedule,
     resolve_active_transition,
 )
@@ -78,6 +81,10 @@ class ScheduledSceneProgram:
         self.allow_turn_on_if_any_on: bool = bool(
             config.get(CONF_ALLOW_TURN_ON_IF_ANY_ON, DEFAULT_ALLOW_TURN_ON_IF_ANY_ON)
         )
+
+        self.curves: dict[str, DimToWarmCurve]
+        self.light_curves: dict[str, DimToWarmCurve]
+        self.curves, self.light_curves = parse_dim_to_warm_curves(config.get(CONF_CURVES))
 
         self.schedule: list[ScheduleStep] = parse_schedule(config.get(CONF_SCHEDULE, []))
 
@@ -127,10 +134,11 @@ class ScheduledSceneProgram:
             )
 
         _LOGGER.debug(
-            "Program [%s] started: interval=%ss, lights=%s",
+            "Program [%s] started: interval=%ss, lights=%s, curves=%s",
             self.name,
             self.transition_interval,
             self.lights,
+            list(self.curves.keys()),
         )
 
     async def async_stop(self) -> None:
@@ -211,7 +219,16 @@ class ScheduledSceneProgram:
             light_is_on = state is not None and state.state == "on"
 
             if allow_turn_lights_on or light_is_on:
-                b, temp = calculate_light_state(transition, light_id)
+                b, temp = calculate_light_state(transition, light_id, self.light_curves)
+                curve_info = self.light_curves.get(light_id)
+                _LOGGER.debug(
+                    "Program [%s] light [%s] target: brightness=%s%%, temp=%sK (curve=%s)",
+                    self.name,
+                    light_id,
+                    b,
+                    temp,
+                    curve_info.name if curve_info else None,
+                )
                 await self.hass.services.async_call(
                     "light",
                     "turn_on",

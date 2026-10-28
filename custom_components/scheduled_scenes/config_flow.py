@@ -23,6 +23,7 @@ from homeassistant.helpers.selector import (
 
 from .const import (
     CONF_ALLOW_TURN_ON_IF_ANY_ON,
+    CONF_CURVES,
     CONF_DISABLE_WHEN_LIGHTS_OFF,
     CONF_ENABLE_WHEN_LIGHT_TURN_ON,
     CONF_LIGHTS,
@@ -41,7 +42,7 @@ from .const import (
     DEFAULT_TRANSITION_TIME_ON_LIGHT_TURN_ON,
     DOMAIN,
 )
-from .logic import parse_schedule
+from .logic import parse_dim_to_warm_curves, parse_schedule
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -68,6 +69,10 @@ def _get_schema(defaults: dict[str, Any], is_options: bool = False) -> vol.Schem
     schedule_val = defaults.get(CONF_SCHEDULE, DEFAULT_SCHEDULE_TEMPLATE)
     if isinstance(schedule_val, list):
         schedule_val = yaml.dump(schedule_val, sort_keys=False)
+
+    curves_val = defaults.get(CONF_CURVES, "")
+    if isinstance(curves_val, (dict, list)):
+        curves_val = yaml.dump(curves_val, sort_keys=False)
 
     schema: dict[Any, Any] = {}
     if not is_options:
@@ -158,13 +163,16 @@ def _get_schema(defaults: dict[str, Any], is_options: bool = False) -> vol.Schem
             vol.Required(
                 CONF_SCHEDULE, default=schedule_val
             ): TextSelector(TextSelectorConfig(multiline=True)),
+            vol.Optional(
+                CONF_CURVES, default=curves_val
+            ): TextSelector(TextSelectorConfig(multiline=True)),
         }
     )
     return vol.Schema(schema)
 
 
 def _validate_input(user_input: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
-    """Validate user input and parse YAML schedule."""
+    """Validate user input and parse YAML schedule and curves."""
     errors: dict[str, str] = {}
     cleaned = dict(user_input)
 
@@ -186,6 +194,28 @@ def _validate_input(user_input: dict[str, Any]) -> tuple[dict[str, Any], dict[st
         steps = parse_schedule(schedule_raw)
         if not steps:
             errors[CONF_SCHEDULE] = "invalid_schedule"
+
+    curves_raw = user_input.get(CONF_CURVES)
+    if isinstance(curves_raw, str):
+        curves_str = curves_raw.strip()
+        if curves_str:
+            try:
+                parsed_curves = yaml.safe_load(curves_str)
+                if parsed_curves:
+                    parse_dim_to_warm_curves(parsed_curves)
+                    cleaned[CONF_CURVES] = parsed_curves
+                else:
+                    cleaned.pop(CONF_CURVES, None)
+            except Exception:
+                errors[CONF_CURVES] = "invalid_curves"
+        else:
+            cleaned.pop(CONF_CURVES, None)
+    elif isinstance(curves_raw, (dict, list)):
+        try:
+            parse_dim_to_warm_curves(curves_raw)
+            cleaned[CONF_CURVES] = curves_raw
+        except Exception:
+            errors[CONF_CURVES] = "invalid_curves"
 
     return cleaned, errors
 

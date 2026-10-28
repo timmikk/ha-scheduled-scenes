@@ -14,12 +14,14 @@
           "enable_when_light_turn_on": "Enable schedule when any light turns on",
           "disable_when_lights_off": "Disable schedule when all lights turn off",
           "allow_turn_on_if_any_on": "Allow turning on lights if any light is on",
-          "schedule": "Schedule Curve (YAML)"
+          "schedule": "Schedule Curve (YAML)",
+          "curves": "Dim-to-Warm Curves (YAML, optional)"
         }
       }
     },
     "error": {
-      "invalid_schedule": "The schedule must be valid YAML with at least one schedule step."
+      "invalid_schedule": "The schedule must be valid YAML with at least one schedule step.",
+      "invalid_curves": "Curves configuration must be valid YAML."
     },
     "abort": {
       "already_configured": "A room with this name is already configured."
@@ -39,12 +41,14 @@
           "enable_when_light_turn_on": "Enable schedule when any light turns on",
           "disable_when_lights_off": "Disable schedule when all lights turn off",
           "allow_turn_on_if_any_on": "Allow turning on lights if any light is on",
-          "schedule": "Schedule Curve (YAML)"
+          "schedule": "Schedule Curve (YAML)",
+          "curves": "Dim-to-Warm Curves (YAML, optional)"
         }
       }
     },
     "error": {
-      "invalid_schedule": "The schedule must be valid YAML with at least one schedule step."
+      "invalid_schedule": "The schedule must be valid YAML with at least one schedule step.",
+      "invalid_curves": "Curves configuration must be valid YAML."
     }
   }
 }
