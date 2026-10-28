@@ -7,6 +7,7 @@ from typing import Any
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
@@ -26,7 +27,7 @@ async def async_setup_entry(
 class ScheduledSceneSwitch(SwitchEntity):
     """Switch representation of a scheduled_scenes program."""
 
-    _attr_has_entity_name = True
+    _attr_has_entity_name = False
     _attr_icon = "mdi:calendar-clock"
 
     def __init__(self, program: ScheduledSceneProgram, entry_id: str) -> None:
@@ -34,8 +35,15 @@ class ScheduledSceneSwitch(SwitchEntity):
         self.program = program
         self._entry_id = entry_id
 
-        self._attr_name = f"Schedule {program.name.title()}"
+        display_name = program.name.replace("_", " ").title()
+        self._attr_name = f"Schedule {display_name}"
         self._attr_unique_id = f"scheduled_scenes_{program.name}"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry_id)},
+            name=display_name,
+            manufacturer="Scheduled Scenes",
+            model="Room Program",
+        )
 
     @property
     def is_on(self) -> bool:
