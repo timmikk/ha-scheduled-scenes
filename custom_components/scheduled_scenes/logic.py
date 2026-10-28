@@ -68,6 +68,88 @@ class DimToWarmCurve:
 
 
 @dataclass(frozen=True)
+class BrightnessPoint:
+    """A single coordinate point on a room brightness curve."""
+
+    room_brightness: int
+    light_brightness: int
+
+
+@dataclass(frozen=True)
+class BrightnessCurve:
+    """A room brightness curve mapping room brightness (0-100%) to light brightness (0-100%)."""
+
+    name: str
+    lights: list[str] = field(default_factory=list)
+    points: list[BrightnessPoint] = field(default_factory=list)
+
+    def evaluate(self, room_brightness: int) -> int:
+        """Evaluate light brightness for given room brightness (0-100%)."""
+        if not self.points:
+            return max(0, min(100, room_brightness))
+
+        if len(self.points) == 1:
+            return max(0, min(100, self.points[0].light_brightness))
+
+        # Clamping
+        if room_brightness <= self.points[0].room_brightness:
+            return max(0, min(100, self.points[0].light_brightness))
+        if room_brightness >= self.points[-1].room_brightness:
+            return max(0, min(100, self.points[-1].light_brightness))
+
+        # Piecewise linear interpolation
+        for i in range(len(self.points) - 1):
+            p1 = self.points[i]
+            p2 = self.points[i + 1]
+            if p1.room_brightness <= room_brightness <= p2.room_brightness:
+                if p2.room_brightness == p1.room_brightness:
+                    return max(0, min(100, p1.light_brightness))
+                fraction = (room_brightness - p1.room_brightness) / (p2.room_brightness - p1.room_brightness)
+                val = interpolate_scalar(p1.light_brightness, p2.light_brightness, fraction)
+                return max(0, min(100, val))
+
+        return max(0, min(100, self.points[-1].light_brightness))
+
+    def invert(self, light_brightness: int) -> int:
+        """Estimate room brightness (0-100%) corresponding to a light brightness."""
+        if not self.points:
+            return max(0, min(100, light_brightness))
+
+        if len(self.points) == 1:
+            return max(0, min(100, self.points[0].room_brightness))
+
+        all_b = [p.light_brightness for p in self.points]
+        min_b = min(all_b)
+        max_b = max(all_b)
+
+        if light_brightness < min_b:
+            for p in self.points:
+                if p.light_brightness == min_b:
+                    return max(0, min(100, p.room_brightness))
+            return max(0, min(100, self.points[0].room_brightness))
+
+        if light_brightness > max_b:
+            for p in reversed(self.points):
+                if p.light_brightness == max_b:
+                    return max(0, min(100, p.room_brightness))
+            return max(0, min(100, self.points[-1].room_brightness))
+
+        for i in range(len(self.points) - 1):
+            p1 = self.points[i]
+            p2 = self.points[i + 1]
+            seg_min = min(p1.light_brightness, p2.light_brightness)
+            seg_max = max(p1.light_brightness, p2.light_brightness)
+            if seg_min <= light_brightness <= seg_max:
+                if p2.light_brightness == p1.light_brightness:
+                    return max(0, min(100, p1.room_brightness))
+                fraction = (light_brightness - p1.light_brightness) / (p2.light_brightness - p1.light_brightness)
+                val = interpolate_scalar(p1.room_brightness, p2.room_brightness, fraction)
+                return max(0, min(100, val))
+
+        return max(0, min(100, self.points[-1].room_brightness))
+
+
+@dataclass(frozen=True)
 class ScheduleStep:
     """A single scheduled checkpoint defining target light parameters at a given time."""
 
@@ -158,6 +240,127 @@ def parse_dim_to_warm_curves(
     return curves_by_name, curves_by_light
 
 
+def parse_brightness_points(raw_points: Any) -> list[BrightnessPoint]:
+    """Parse brightness curve points from list of dicts or list of [room_b, light_b] pairs."""
+    if not raw_points or not isinstance(raw_points, (list, tuple)):
+        return []
+
+    points: list[BrightnessPoint] = []
+    for item in raw_points:
+        r_val = None
+        l_val = None
+        if isinstance(item, (list, tuple)) and len(item) >= 2:
+            r_val = item[0]
+            l_val = item[1]
+        elif isinstance(item, dict):
+            r_val = item.get("room_brightness", item.get("room", item.get("r", item.get("room_pct"))))
+            l_val = item.get("light_brightness", item.get("light", item.get("brightness", item.get("b"))))
+
+        if r_val is not None and l_val is not None:
+            try:
+                r_int = int(str(r_val).rstrip("%").strip())
+                l_int = int(str(l_val).rstrip("%").strip())
+                points.append(BrightnessPoint(room_brightness=r_int, light_brightness=l_int))
+            except (ValueError, TypeError):
+                continue
+
+    points.sort(key=lambda pt: pt.room_brightness)
+    return points
+
+
+def parse_brightness_curves(
+    data: Any,
+) -> tuple[dict[str, BrightnessCurve], dict[str, BrightnessCurve]]:
+    """Parse brightness curve definitions into (curves_by_name, curves_by_light)."""
+    curves_by_name: dict[str, BrightnessCurve] = {}
+    curves_by_light: dict[str, BrightnessCurve] = {}
+
+    if not data:
+        return curves_by_name, curves_by_light
+
+    raw_items: list[tuple[str, dict]] = []
+    if isinstance(data, dict):
+        for key, val in data.items():
+            if isinstance(val, dict):
+                raw_items.append((str(key), val))
+            elif isinstance(val, (list, tuple)):
+                raw_items.append((str(key), {"lights": [str(key)], "points": val}))
+    elif isinstance(data, list):
+        for item in data:
+            if isinstance(item, dict):
+                name = str(item.get("name", f"brightness_curve_{len(raw_items)+1}"))
+                raw_items.append((name, item))
+
+    for name, item in raw_items:
+        raw_lights = item.get("lights", [])
+        if isinstance(raw_lights, str):
+            lights = [raw_lights]
+        elif isinstance(raw_lights, (list, tuple)):
+            lights = [str(lt) for lt in raw_lights]
+        else:
+            lights = []
+
+        raw_points = item.get("curve", item.get("points", []))
+        points = parse_brightness_points(raw_points)
+
+        curve = BrightnessCurve(name=name, lights=lights, points=points)
+        curves_by_name[name] = curve
+        for light_id in lights:
+            curves_by_light[light_id] = curve
+
+    return curves_by_name, curves_by_light
+
+
+def estimate_room_brightness(
+    current_light_brightnesses: dict[str, int],
+    brightness_curves: dict[str, BrightnessCurve] | None = None,
+) -> int:
+    """Estimate overall room brightness (0-100%) from active light brightness states."""
+    if not current_light_brightnesses:
+        return 0
+
+    estimates: list[int] = []
+    for light_id, b in current_light_brightnesses.items():
+        if b <= 0:
+            continue
+        if brightness_curves and light_id in brightness_curves:
+            est = brightness_curves[light_id].invert(b)
+        else:
+            est = b
+        estimates.append(est)
+
+    if not estimates:
+        return 0
+
+    avg = round(sum(estimates) / len(estimates))
+    return max(0, min(100, avg))
+
+
+def calculate_manual_light_state(
+    room_brightness: int,
+    light_id: str,
+    brightness_curves: dict[str, BrightnessCurve] | None = None,
+    dim_to_warm_curves: dict[str, DimToWarmCurve] | None = None,
+    default_temp: int = DEFAULT_COLOR_TEMP,
+) -> tuple[int, int]:
+    """Calculate target (brightness_pct, color_temp_kelvin) for a light under manual room brightness."""
+    clamped_room_b = max(0, min(100, room_brightness))
+
+    if brightness_curves and light_id in brightness_curves:
+        light_b = brightness_curves[light_id].evaluate(clamped_room_b)
+    else:
+        light_b = clamped_room_b
+
+    light_b = max(0, min(100, light_b))
+
+    if dim_to_warm_curves and light_id in dim_to_warm_curves:
+        temp = dim_to_warm_curves[light_id].evaluate(light_b)
+    else:
+        temp = default_temp
+
+    return light_b, temp
+
+
 def parse_time(time_val: str | time) -> time:
     """Parse time string 'HH:MM' or 'HH:MM:SS' into a datetime.time object."""
     if isinstance(time_val, time):
@@ -207,7 +410,6 @@ def parse_schedule(raw_steps: list[dict]) -> list[ScheduleStep]:
     if not raw_steps:
         return []
     steps = [parse_schedule_step(s) for s in raw_steps]
-    # Filter duplicate times keeping later ones, and ensure sorted order
     steps.sort(key=lambda s: s.time)
     return steps
 
@@ -225,7 +427,6 @@ def resolve_active_transition(
         now = now.replace(tzinfo=None)
 
     if len(steps) == 1:
-        # Single step: constant brightness and temp 24/7
         step = steps[0]
         start_dt = datetime.combine(now.date(), step.time)
         end_dt = start_dt + timedelta(days=1)
@@ -241,23 +442,19 @@ def resolve_active_transition(
             seconds_from_start=max(0.0, (now - start_dt.replace(tzinfo=None)).total_seconds()),
         )
 
-    # Find where 'now' falls among sorted steps
     today = now.date()
     yesterday = today - timedelta(days=1)
     tomorrow = today + timedelta(days=1)
 
-    # Construct datetime intervals spanning yesterday, today, and tomorrow
     all_step_dts: list[tuple[datetime, ScheduleStep]] = []
     for d in (yesterday, today, tomorrow):
         for s in steps:
             all_step_dts.append((datetime.combine(d, s.time), s))
 
-    # Search for interval where start_dt <= now < end_dt
     for i in range(len(all_step_dts) - 1):
         start_dt, start_step = all_step_dts[i]
         end_dt, end_step = all_step_dts[i + 1]
 
-        # Ignore invalid zero or negative transitions
         if end_dt <= start_dt:
             continue
 
@@ -284,6 +481,7 @@ def get_step_value(
     light_id: str,
     prop: str,
     light_curves: dict[str, DimToWarmCurve] | None = None,
+    brightness_curves: dict[str, BrightnessCurve] | None = None,
 ) -> int | None:
     """Extract property value (brightness or temp) with per-light override."""
     if light_id in step.lights:
@@ -297,6 +495,8 @@ def get_step_value(
                 return None
 
     if prop == "brightness":
+        if brightness_curves and light_id in brightness_curves:
+            return brightness_curves[light_id].evaluate(step.brightness)
         return step.brightness
     return step.temp
 
@@ -314,6 +514,7 @@ def calculate_light_state(
     transition: ActiveTransition,
     light_id: str,
     light_curves: dict[str, DimToWarmCurve] | None = None,
+    brightness_curves: dict[str, BrightnessCurve] | None = None,
 ) -> tuple[int, int]:
     """Calculate target (brightness_pct, color_temp_kelvin) for a light in transition."""
     if transition.total_seconds <= 0:
@@ -321,8 +522,8 @@ def calculate_light_state(
     else:
         fraction = transition.seconds_from_start / transition.total_seconds
 
-    b_start = get_step_value(transition.start_step, light_id, "brightness", light_curves)
-    b_end = get_step_value(transition.end_step, light_id, "brightness", light_curves)
+    b_start = get_step_value(transition.start_step, light_id, "brightness", light_curves, brightness_curves)
+    b_end = get_step_value(transition.end_step, light_id, "brightness", light_curves, brightness_curves)
     if b_start is None:
         b_start = 100
     if b_end is None:
@@ -330,8 +531,8 @@ def calculate_light_state(
     brightness = interpolate_scalar(b_start, b_end, fraction)
 
     curve = light_curves.get(light_id) if light_curves else None
-    t_start_step = get_step_value(transition.start_step, light_id, "temp", light_curves)
-    t_end_step = get_step_value(transition.end_step, light_id, "temp", light_curves)
+    t_start_step = get_step_value(transition.start_step, light_id, "temp", light_curves, brightness_curves)
+    t_end_step = get_step_value(transition.end_step, light_id, "temp", light_curves, brightness_curves)
 
     if t_start_step is None and t_end_step is None:
         if curve is not None:

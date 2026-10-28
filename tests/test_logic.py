@@ -5,14 +5,20 @@ from datetime import datetime, time
 from custom_components.scheduled_scenes.logic import (
     DEFAULT_COLOR_TEMP,
     ActiveTransition,
+    BrightnessCurve,
+    BrightnessPoint,
     DimToWarmCurve,
     DimToWarmPoint,
     LightOverride,
     ScheduleStep,
     calculate_light_state,
+    calculate_manual_light_state,
     calculate_transition_seconds,
+    estimate_room_brightness,
     get_step_value,
     interpolate_scalar,
+    parse_brightness_curves,
+    parse_brightness_points,
     parse_curve_points,
     parse_dim_to_warm_curves,
     parse_schedule,
@@ -134,9 +140,65 @@ def test_dim_to_warm_curve_evaluation():
     assert flat_curve.evaluate(20) == 2500
 
 
+def test_brightness_curve_evaluate_and_invert():
+    """Verify BrightnessCurve evaluation and inversion."""
+    empty_curve = BrightnessCurve(name="empty")
+    assert empty_curve.evaluate(45) == 45
+    assert empty_curve.invert(45) == 45
+
+    single_curve = BrightnessCurve(name="single", points=[BrightnessPoint(50, 70)])
+    assert single_curve.evaluate(20) == 70
+    assert single_curve.invert(30) == 50
+
+    # Curve where accent light reaches 100% at 50% room brightness
+    # Points: [[0, 0], [50, 100], [100, 100]]
+    accent_curve = BrightnessCurve(
+        name="accent",
+        points=[
+            BrightnessPoint(0, 0),
+            BrightnessPoint(50, 100),
+            BrightnessPoint(100, 100),
+        ],
+    )
+    # Evaluate
+    assert accent_curve.evaluate(-10) == 0
+    assert accent_curve.evaluate(0) == 0
+    assert accent_curve.evaluate(25) == 50
+    assert accent_curve.evaluate(50) == 100
+    assert accent_curve.evaluate(75) == 100
+    assert accent_curve.evaluate(100) == 100
+    assert accent_curve.evaluate(120) == 100
+
+    # Invert: map light brightness back to room brightness
+    assert accent_curve.invert(0) == 0
+    assert accent_curve.invert(50) == 25
+    # When light is at 100%, the first point reaching 100% light brightness is 50% room brightness
+    assert accent_curve.invert(100) == 50
+
+    # Curve where ceiling light starts at 30% room brightness and reaches 30% at 50% room brightness
+    # Points: [[0, 0], [30, 0], [50, 30], [100, 100]]
+    ceiling_curve = BrightnessCurve(
+        name="ceiling",
+        points=[
+            BrightnessPoint(0, 0),
+            BrightnessPoint(30, 0),
+            BrightnessPoint(50, 30),
+            BrightnessPoint(100, 100),
+        ],
+    )
+    assert ceiling_curve.evaluate(20) == 0
+    assert ceiling_curve.evaluate(30) == 0
+    assert ceiling_curve.evaluate(50) == 30
+    assert ceiling_curve.evaluate(75) == 65
+    assert ceiling_curve.evaluate(100) == 100
+
+    assert ceiling_curve.invert(0) == 0
+    assert ceiling_curve.invert(30) == 50
+    assert ceiling_curve.invert(100) == 100
+
+
 def test_parse_curve_points():
     """Verify parsing curve points from dicts, lists, and string representations."""
-    # List of [brightness, temp] pairs
     pairs = [[1, 2200], [50, 2700], [100, 4000]]
     pts = parse_curve_points(pairs)
     assert len(pts) == 3
@@ -144,7 +206,6 @@ def test_parse_curve_points():
     assert pts[1] == DimToWarmPoint(50, 2700)
     assert pts[2] == DimToWarmPoint(100, 4000)
 
-    # List of dicts with percentage and K signs, unsorted
     dicts = [
         {"brightness": "100%", "temp": "4000K"},
         {"b": "1%", "k": "2200K"},
@@ -153,19 +214,126 @@ def test_parse_curve_points():
     ]
     pts2 = parse_curve_points(dicts)
     assert len(pts2) == 3
-    # Sorted order
     assert pts2[0] == DimToWarmPoint(1, 2200)
     assert pts2[1] == DimToWarmPoint(50, 2700)
     assert pts2[2] == DimToWarmPoint(100, 4000)
 
-    # None or non-list
     assert parse_curve_points(None) == []
     assert parse_curve_points("not_a_list") == []
 
 
+def test_parse_brightness_points_and_curves():
+    """Verify parsing brightness points and curves."""
+    pairs = [[0, 0], [50, 100], [100, 100]]
+    pts = parse_brightness_points(pairs)
+    assert len(pts) == 3
+    assert pts[0] == BrightnessPoint(0, 0)
+    assert pts[1] == BrightnessPoint(50, 100)
+    assert pts[2] == BrightnessPoint(100, 100)
+
+    dicts = [
+        {"room": 100, "light": 100},
+        {"room_brightness": "0%", "light_brightness": "10%"},
+        {"invalid": "foo"},
+    ]
+    pts2 = parse_brightness_points(dicts)
+    assert len(pts2) == 2
+    assert pts2[0] == BrightnessPoint(0, 10)
+    assert pts2[1] == BrightnessPoint(100, 100)
+
+    # Parse brightness curves
+    raw_dict = {
+        "accent_curve": {
+            "lights": ["light.accent_1", "light.accent_2"],
+            "points": [[0, 0], [50, 100], [100, 100]],
+        },
+        "light.ceiling": [[0, 0], [50, 30], [100, 100]],
+    }
+    curves_by_name, curves_by_light = parse_brightness_curves(raw_dict)
+    assert "accent_curve" in curves_by_name
+    assert "light.ceiling" in curves_by_name
+    assert curves_by_light["light.accent_1"].name == "accent_curve"
+    assert curves_by_light["light.accent_2"].name == "accent_curve"
+    assert curves_by_light["light.ceiling"].name == "light.ceiling"
+
+    # List format
+    raw_list = [
+        {
+            "name": "reading_spot",
+            "lights": "light.reading",
+            "points": [[0, 0], [100, 100]],
+        }
+    ]
+    c_list, l_list = parse_brightness_curves(raw_list)
+    assert "reading_spot" in c_list
+    assert l_list["light.reading"].name == "reading_spot"
+
+    # None
+    assert parse_brightness_curves(None) == ({}, {})
+
+
+def test_estimate_room_brightness():
+    """Verify estimating overall room brightness from active light brightnesses."""
+    # When no lights are on
+    assert estimate_room_brightness({}) == 0
+    assert estimate_room_brightness({"light.spot": 0}) == 0
+
+    # Without curves: average of active lights
+    assert estimate_room_brightness({"light.1": 40, "light.2": 60}) == 50
+
+    # With curves:
+    # light.accent reaches 100% at 50% room brightness
+    # light.ceiling reaches 30% at 50% room brightness
+    accent = BrightnessCurve(
+        name="accent",
+        points=[BrightnessPoint(0, 0), BrightnessPoint(50, 100), BrightnessPoint(100, 100)],
+    )
+    ceiling = BrightnessCurve(
+        name="ceiling",
+        points=[BrightnessPoint(0, 0), BrightnessPoint(30, 0), BrightnessPoint(50, 30), BrightnessPoint(100, 100)],
+    )
+    curves = {"light.accent": accent, "light.ceiling": ceiling}
+
+    # If accent is 100% and ceiling is 30%, estimated room brightness is 50%
+    est = estimate_room_brightness({"light.accent": 100, "light.ceiling": 30}, curves)
+    assert est == 50
+
+    # If only accent is at 50% (halfway to 100% -> room brightness 25%)
+    est2 = estimate_room_brightness({"light.accent": 50}, curves)
+    assert est2 == 25
+
+
+def test_calculate_manual_light_state():
+    """Verify manual room brightness calculation combined with dim-to-warm curves."""
+    b_curve = BrightnessCurve(
+        name="accent",
+        points=[BrightnessPoint(0, 0), BrightnessPoint(50, 100), BrightnessPoint(100, 100)],
+    )
+    dtw_curve = DimToWarmCurve(
+        name="dtw",
+        points=[DimToWarmPoint(1, 2000), DimToWarmPoint(50, 2700), DimToWarmPoint(100, 4000)],
+    )
+    b_curves = {"light.accent": b_curve}
+    dtw_curves = {"light.accent": dtw_curve}
+
+    # At 50% room brightness: accent light brightness = 100%, and temp from dtw at 100% = 4000K
+    b, temp = calculate_manual_light_state(50, "light.accent", b_curves, dtw_curves)
+    assert b == 100
+    assert temp == 4000
+
+    # At 25% room brightness: accent light brightness = 50%, temp from dtw at 50% = 2700K
+    b25, temp25 = calculate_manual_light_state(25, "light.accent", b_curves, dtw_curves)
+    assert b25 == 50
+    assert temp25 == 2700
+
+    # Light without any curves: room brightness 60% -> light brightness 60%, default 2700K
+    b_std, temp_std = calculate_manual_light_state(60, "light.standard", b_curves, dtw_curves)
+    assert b_std == 60
+    assert temp_std == DEFAULT_COLOR_TEMP
+
+
 def test_parse_dim_to_warm_curves():
     """Verify parsing curves dictionary and list format, plus entity mapping."""
-    # Dict format with shared entities
     raw_dict = {
         "warm_glow_spots": {
             "lights": ["light.spot_1", "light.spot_2"],
@@ -187,7 +355,6 @@ def test_parse_dim_to_warm_curves():
     assert light_curves["light.hallway"].name == "hallway_single"
     assert light_curves["light.spot_1"] is light_curves["light.spot_2"]
 
-    # List format
     raw_list = [
         {
             "name": "reading_lamp",
@@ -199,7 +366,6 @@ def test_parse_dim_to_warm_curves():
     assert "reading_lamp" in curves_list
     assert light_curves_list["light.reading"].name == "reading_lamp"
 
-    # Empty data
     c_empty, l_empty = parse_dim_to_warm_curves(None)
     assert c_empty == {}
     assert l_empty == {}
@@ -226,7 +392,6 @@ def test_resolve_active_transition_daytime():
         {"time": "22:00", "brightness": 20, "temp": 2000},
     ])
 
-    # Exactly at 06:00 (midway between 05:00 and 07:00)
     now = datetime(2026, 10, 27, 6, 0, 0)
     trans = resolve_active_transition(steps, now)
     assert trans is not None
@@ -248,7 +413,6 @@ def test_resolve_active_transition_midnight_wrap():
         {"time": "23:00", "brightness": 40, "temp": 2000},
     ])
 
-    # At 02:00 in the morning: should be between yesterday 23:00 and today 05:00
     now = datetime(2026, 10, 27, 2, 0, 0)
     trans = resolve_active_transition(steps, now)
     assert trans is not None
@@ -257,7 +421,6 @@ def test_resolve_active_transition_midnight_wrap():
     assert trans.total_seconds == 21600.0
     assert trans.seconds_from_start == 10800.0
 
-    # Start: 40% / 2000K, End: 10% / 2000K -> Midpoint is 25% / 2000K
     b, k = calculate_light_state(trans, "light.any")
     assert b == 25
     assert k == 2000
@@ -290,22 +453,17 @@ def test_calculate_light_state_with_overrides():
         start_dt=datetime(2026, 10, 27, 8, 0),
         end_dt=datetime(2026, 10, 27, 12, 0),
         total_seconds=14400.0,
-        seconds_from_start=7200.0,  # 50%
+        seconds_from_start=7200.0,
     )
 
-    # Standard light: no override, remains flat 100% / 4000K
     b_std, k_std = calculate_light_state(trans, "light.standard")
     assert b_std == 100
     assert k_std == 4000
 
-    # Overridden light: 50 -> 90 => 70%, 5000 -> 3000 => 4000K
     b_ovr, k_ovr = calculate_light_state(trans, "light.override")
     assert b_ovr == 70
     assert k_ovr == 4000
 
-    # Partial light:
-    # start brightness is default 100, end is 40 -> 70%
-    # start temp is override 6000, end is default 4000 -> 5000K
     b_part, k_part = calculate_light_state(trans, "light.partial")
     assert b_part == 70
     assert k_part == 5000
@@ -324,7 +482,6 @@ def test_calculate_light_state_with_dim_to_warm_curves():
     )
     light_curves = {"light.curve_light": curve}
 
-    # Scenario A: Both steps have omitted temp (pure curve evaluation)
     step_start = ScheduleStep(time=time(8, 0), brightness=20, temp=None)
     step_end = ScheduleStep(time=time(12, 0), brightness=80, temp=None)
     trans = ActiveTransition(
@@ -333,20 +490,16 @@ def test_calculate_light_state_with_dim_to_warm_curves():
         start_dt=datetime(2026, 10, 27, 8, 0),
         end_dt=datetime(2026, 10, 27, 12, 0),
         total_seconds=14400.0,
-        seconds_from_start=7200.0,  # 50%
+        seconds_from_start=7200.0,
     )
-    # Brightness at midpoint: 50%
-    # Curve evaluation at 50%: 2700K
     b_curve, k_curve = calculate_light_state(trans, "light.curve_light", light_curves)
     assert b_curve == 50
     assert k_curve == 2700
 
-    # Light without curve with omitted temp falls back to DEFAULT_COLOR_TEMP (2700K)
     b_no_curve, k_no_curve = calculate_light_state(trans, "light.other", light_curves)
     assert b_no_curve == 50
     assert k_no_curve == DEFAULT_COLOR_TEMP
 
-    # Scenario B: Transition from explicit temp (5000K) to curve (at 20% brightness)
     step_start_exp = ScheduleStep(time=time(8, 0), brightness=100, temp=5000)
     step_end_curve = ScheduleStep(time=time(12, 0), brightness=50, temp=None)
     trans_mixed = ActiveTransition(
@@ -355,16 +508,12 @@ def test_calculate_light_state_with_dim_to_warm_curves():
         start_dt=datetime(2026, 10, 27, 8, 0),
         end_dt=datetime(2026, 10, 27, 12, 0),
         total_seconds=14400.0,
-        seconds_from_start=7200.0,  # 50%
+        seconds_from_start=7200.0,
     )
-    # Brightness midpoint: 75%
-    # Start temp: 5000K, End target from curve at 50% is 2700K
-    # Midpoint temp: interpolate_scalar(5000, 2700, 0.5) = 3850K
     b_mix, k_mix = calculate_light_state(trans_mixed, "light.curve_light", light_curves)
     assert b_mix == 75
     assert k_mix == 3850
 
-    # Scenario C: Step has explicit temp for room, but light override sets brightness without temp
     step_room_exp = ScheduleStep(
         time=time(8, 0),
         brightness=80,
@@ -385,12 +534,10 @@ def test_calculate_light_state_with_dim_to_warm_curves():
         total_seconds=14400.0,
         seconds_from_start=0.0,
     )
-    # Light override has brightness 10 and no temp -> curve evaluates at 10%
     b_ovr, k_ovr = calculate_light_state(trans_override, "light.curve_light", light_curves)
     assert b_ovr == 10
     assert k_ovr == curve.evaluate(10)
 
-    # But room light without override gets 80% / 4500K
     b_room, k_room = calculate_light_state(trans_override, "light.normal", light_curves)
     assert b_room == 80
     assert k_room == 4500
@@ -408,24 +555,16 @@ def test_calculate_transition_seconds():
         seconds_from_start=60.0,
     )
 
-    # 1 minute into transition, configured is 120s -> min(60, 120) = 60s
     assert calculate_transition_seconds(trans, None, 120.0, now) == 60.0
-
-    # 5 minutes into transition -> min(300, 120) = 120s
     now_later = datetime(2026, 10, 27, 8, 5, 0)
     assert calculate_transition_seconds(trans, None, 120.0, now_later) == 120.0
-
-    # Override takes precedence
     assert calculate_transition_seconds(trans, 0.5, 120.0, now_later) == 0.5
-
-    # None transition
     assert calculate_transition_seconds(None, None, 120.0, now) == 120.0
 
 
 def test_edge_cases_and_zero_seconds():
     """Verify zero duration transition and fallback getters."""
     step = ScheduleStep(time=time(10, 0), brightness=50, temp=3000)
-    # Zero total seconds transition
     trans = ActiveTransition(
         start_step=step,
         end_step=step,
@@ -438,7 +577,6 @@ def test_edge_cases_and_zero_seconds():
     assert b == 50
     assert k == 3000
 
-    # Direct get_step_value test
     assert get_step_value(step, "light.test", "temp") == 3000
     assert get_step_value(step, "light.test", "brightness") == 50
 
@@ -451,10 +589,7 @@ def test_coverage_branches():
     })
     assert "light.invalid" not in step.lights
 
-    # Schedule with duplicate time steps
     step1 = ScheduleStep(time=time(10, 0), brightness=50, temp=3000)
     step2 = ScheduleStep(time=time(10, 0), brightness=60, temp=3500)
-    # Datetime outside bounds returns None
     res = resolve_active_transition([step1, step2], datetime(2026, 10, 27, 10, 0))
-    # It either resolves or returns None safely
     assert res is not None or res is None
