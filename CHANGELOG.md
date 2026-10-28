@@ -7,11 +7,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Room brightness distribution curves (`brightness_curves`) mapping overall room brightness to fixture brightness with piecewise linear interpolation (task #2).
+- Smooth start brightness estimation via mathematical curve inversion, preventing sudden jumps or wrong-direction stepping when adjusting brightness from physical remotes or wall buttons (task #2).
+- Manual override tracking with suspension of periodic automated schedule transitions while manual brightness is active (task #2).
+- Domain services `scheduled_scenes.adjust_brightness`, `scheduled_scenes.step_brightness`, and `scheduled_scenes.resume_schedule`, plus per-program legacy service aliases (task #2).
+- Diagnostic sensor attributes `manual_override` and `manual_brightness` on `sensor.<name>_schedule_phase` (task #2).
 - Dim-to-warm curves support for physical light models with automatic brightness-to-Kelvin derivation (task #1).
-- Piecewise linear curve interpolation engine with boundary clamping in `logic.py`.
-- Shared entity curve mapping: multiple entities can share a single physical light model curve.
+- Piecewise linear curve interpolation engine with boundary clamping in `logic.py` (task #1).
+- Shared entity curve mapping: multiple entities can share a single physical light model curve (task #1).
 - Dual point format support: verbose dictionary mappings (`[{brightness: 1, temp: 2200}, ...]`) and compact coordinate pairs (`[[1, 2200], [100, 4000]]`).
-- Support for schedule steps omitting `temp` or using `dim_to_warm` / `dimm_to_warm` aliases while preserving backwards-compatibility with explicit temperature checkpoints.
+- Support for schedule steps omitting `temp` or using `dim_to_warm` / `dimm_to_warm` aliases while preserving backwards-compatibility with explicit temperature checkpoints (task #1).
 - Two-tier curve configuration: global top-level curves under `scheduled_scenes.curves` or scoped curves per program/room, plus UI config flow / options flow support.
 
 ## [0.1.1] - 2026-10-27

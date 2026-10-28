@@ -11,13 +11,16 @@ HACS-installable. See `info.md` for install/rollback instructions.
 ## Features
 
 - **Continuous Circadian & Schedule Interpolation**: Seamlessly interpolates brightness and color temperature (Kelvin) between defined time checkpoints across 24 hours.
-- **Dim-to-Warm Curves**: Define shared brightness-to-color-temperature curves for physical light models. Schedule steps can specify `brightness` (or `dim_to_warm`) without `temp`, automatically calculating the exact Kelvin value along the curve.
+- **Interactive Brightness Stepping & Manual Override**: Increase or decrease room brightness in discrete steps (e.g. +10% / -10%) via wall buttons, remotes, or automations. Setting manual brightness suspends automated schedule transitions so periodic updates don't revert user adjustments.
+- **Start Brightness Estimation**: When brightness stepping is triggered, the integration estimates the room's current brightness level by inspecting active physical light states and inverting brightness curves, preventing abrupt jumps or wrong-direction stepping.
+- **Room Brightness Distribution Curves**: Define non-linear light distribution across room brightness levels (e.g. mood lights at 100% while ceiling downlights are only at 30% when room brightness is 50%).
+- **Dim-to-Warm Synergy**: Brightness adjustments automatically evaluate each fixture's configured dim-to-warm curve, smoothly warming or cooling the room as it dims or brightens.
 - **Midnight Wrapping**: Full mathematical support for schedules crossing midnight (e.g. 23:00 to 07:00).
 - **Per-Light Overrides**: Override brightness or color temperature for specific lights within a multi-light room program.
 - **Smart Light Automation**: Automatically adapts transitions when lights are turned on or off.
 - **Two-Tier Configuration**: Configure effortlessly via YAML under `scheduled_scenes:` or directly via the Home Assistant UI / Config Flow.
 - **Switches & Diagnostic Sensors**: Exposes a toggle switch (`switch.schedule_<name>`) and a diagnostic sensor (`sensor.<name>_schedule_phase`) for every configured program.
-- **Domain Services**: Provides `scheduled_scenes.turn_on`, `scheduled_scenes.turn_off`, `scheduled_scenes.enable`, `scheduled_scenes.disable`, and `scheduled_scenes.reload`, plus legacy alias services (`<name>_turn_on`, `<name>_turn_off`, etc.).
+- **Domain Services**: Provides `scheduled_scenes.turn_on`, `turn_off`, `enable`, `disable`, `adjust_brightness`, `step_brightness`, `resume_schedule`, and `reload`, plus legacy alias services (`<name>_adjust_brightness`, etc.).
 
 ## Configuration
 
@@ -50,7 +53,7 @@ scheduled_scenes:
         temp: 2200
 ```
 
-#### Dim-to-Warm Curves
+#### Dim-to-Warm Curves & Room Brightness Distribution
 
 Define shared curves once by light model or entity group. When schedule steps specify `brightness` without `temp`, any entity mapped to a curve derives its color temperature automatically via piecewise linear interpolation along that curve:
 
@@ -77,32 +80,99 @@ scheduled_scenes:
         - [50, 2600]
         - [100, 3500]
 
-  programs:
-    - name: kitchen
+  # Optional room brightness curves mapping overall room % to individual fixtures
+  brightness_curves:
+    living_room_accent:
       lights:
-        - light.kitchen_spot_1
-        - light.kitchen_spot_2
-        - light.kitchen_island
+        - light.living_room_cove
+      points:
+        - [0, 0]
+        - [50, 100]    # Mood light is at 100% when room is at 50%
+        - [100, 100]
+    living_room_main:
+      lights:
+        - light.living_room_ceiling
+      points:
+        - [0, 0]
+        - [30, 0]      # Ceiling stays off below 30% room brightness
+        - [50, 30]     # Ceiling is at 30% when room is at 50%
+        - [100, 100]
+
+  programs:
+    - name: living_room
+      lights:
+        - light.living_room_cove
+        - light.living_room_ceiling
       schedule:
-        # Dim-to-warm: spots derive Kelvin from warm_glow_spots curve
-        - time: "06:30"
-          brightness: 20
-        # Explicit temp: traditional override still works for any step
-        - time: "12:00"
-          brightness: 100
-          temp: 4500
-        # Per-light override: spot derives from curve at 30%, island gets explicit temp
-        - time: "20:00"
-          brightness: 60
-          lights:
-            light.kitchen_spot_1:
-              brightness: 30
-            light.kitchen_island:
-              brightness: 50
-              temp: 2500
+        - time: "07:00"
+          brightness: 30
+        - time: "13:00"
+          brightness: 80
+        - time: "21:00"
+          brightness: 40
 ```
 
-Curve checkpoints support both dictionary mappings (`[{brightness: 1, temp: 2200}, ...]`) and compact coordinate pairs (`[[1, 2200], [100, 4000]]`). Curves can also be defined directly inside individual room programs under `curves:`.
+Curve checkpoints support both dictionary mappings (`[{brightness: 1, temp: 2200}, ...]`) and compact coordinate pairs (`[[1, 2200], [100, 4000]]`). Curves can also be defined directly inside individual room programs under `curves:` and `brightness_curves:`.
+
+### Interactive Brightness Control & Wall Buttons
+
+Use `scheduled_scenes.adjust_brightness` (or `scheduled_scenes.step_brightness`) to adjust brightness in steps or set an absolute target.
+
+#### Service Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `entity_id` | string | Target scheduled scene switch (e.g. `switch.schedule_living_room`). |
+| `step` | int | Relative brightness change percentage (e.g. `+10` or `-10`). |
+| `brightness` | int | Optional absolute target room brightness percentage (`0-100%`). Setting `0` turns lights off. |
+| `transition` | float | Optional transition time in seconds (defaults to `transition_time_on`, typically 0.3s). |
+
+#### Automation Example: Zigbee Remote Button
+
+```yaml
+automation:
+  - alias: "Living Room Remote - Brightness Up"
+    trigger:
+      - platform: device
+        domain: mqtt
+        device_id: <your_device_id>
+        type: action
+        subtype: brightness_move_up
+    action:
+      - service: scheduled_scenes.adjust_brightness
+        target:
+          entity_id: switch.schedule_living_room
+        data:
+          step: 10
+          transition: 0.3
+
+  - alias: "Living Room Remote - Brightness Down"
+    trigger:
+      - platform: device
+        domain: mqtt
+        device_id: <your_device_id>
+        type: action
+        subtype: brightness_move_down
+    action:
+      - service: scheduled_scenes.adjust_brightness
+        target:
+          entity_id: switch.schedule_living_room
+        data:
+          step: -10
+          transition: 0.3
+
+  - alias: "Living Room Remote - Resume Automated Schedule"
+    trigger:
+      - platform: device
+        domain: mqtt
+        device_id: <your_device_id>
+        type: action
+        subtype: arrow_right_click
+    action:
+      - service: scheduled_scenes.resume_schedule
+        target:
+          entity_id: switch.schedule_living_room
+```
 
 ### Option 2: Home Assistant UI / Config Flow
 
