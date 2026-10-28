@@ -6,6 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Complete suite of status and diagnostic entities per room program (task #3):
+  - `sensor.<room>_mode`: Live operational mode (`off`, `auto-off`, `auto`, `manual`).
+  - `sensor.<room>_current_brightness`: Live overall room brightness percentage (`0-100%`) evaluated from manual overrides, inverted curves, or schedule transitions.
+  - `sensor.<room>_last_command`: Diagnostic sensor tracking last command or trigger (`turn on`, `turn off`, `auto on`, `auto off`, `set brightness`, `step brightness`, `resume schedule`, `enable`, `disable`, `periodic update`) with execution timestamp and parameters.
+  - `binary_sensor.<room>_dim_to_warm_in_use`: Diagnostic binary sensor indicating active dim-to-warm curves with configured curves and light entities in attributes.
+  - `binary_sensor.<room>_brightness_curve_in_use`: Diagnostic binary sensor indicating active brightness distribution curves with mapped fixtures in attributes.
+  - `binary_sensor.<room>_problem`: Standard `problem` class diagnostic binary sensor flagging missing/unavailable light entities, empty schedules, or runtime errors.
+- Unified Device grouping: All entities for each program link directly to a dedicated Home Assistant Device in DeviceRegistry.
+
 ## [0.2.0] - 2026-10-28
 
 ### Added
