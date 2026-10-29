@@ -15,9 +15,3 @@ are read straight from the file. Entries are grouped by Category (fixed order fr
 
 ---
 
-## Features
-
-- [ ] **#4 room control elements** — Add room control elements: virtual light
-  entity with brightness/temp controls and schedule brightness offset
-  `tasks/4-feature-room-control-elements.md`
-  **Status:** pending | **Priority:** high | **Size:** M | **Mode:** auto | **Host:** all
