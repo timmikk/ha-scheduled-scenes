@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-29
+
 ### Added
 - Virtual room light entity (`light.<room>_lights`) providing native Home Assistant light controls (task #4):
   - On / Off toggle: turning on enables `auto` mode, clears manual overrides, and transitions room lights to current scheduled brightness and color temperature; turning off shuts down room fixtures.
