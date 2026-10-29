@@ -93,9 +93,7 @@ def _get_schema(defaults: dict[str, Any], is_options: bool = False) -> vol.Schem
         {
             vol.Required(
                 CONF_LIGHTS, default=defaults.get(CONF_LIGHTS, [])
-            ): EntitySelector(
-                EntitySelectorConfig(domain="light", multiple=True)
-            ),
+            ): EntitySelector(EntitySelectorConfig(domain="light", multiple=True)),
             vol.Required(
                 CONF_TRANSITION_TIME,
                 default=defaults.get(CONF_TRANSITION_TIME, DEFAULT_TRANSITION_TIME),
@@ -169,21 +167,23 @@ def _get_schema(defaults: dict[str, Any], is_options: bool = False) -> vol.Schem
                     CONF_ALLOW_TURN_ON_IF_ANY_ON, DEFAULT_ALLOW_TURN_ON_IF_ANY_ON
                 ),
             ): BooleanSelector(),
-            vol.Required(
-                CONF_SCHEDULE, default=schedule_val
-            ): TextSelector(TextSelectorConfig(multiline=True)),
-            vol.Optional(
-                CONF_CURVES, default=curves_val
-            ): TextSelector(TextSelectorConfig(multiline=True)),
-            vol.Optional(
-                CONF_BRIGHTNESS_CURVES, default=b_curves_val
-            ): TextSelector(TextSelectorConfig(multiline=True)),
+            vol.Required(CONF_SCHEDULE, default=schedule_val): TextSelector(
+                TextSelectorConfig(multiline=True)
+            ),
+            vol.Optional(CONF_CURVES, default=curves_val): TextSelector(
+                TextSelectorConfig(multiline=True)
+            ),
+            vol.Optional(CONF_BRIGHTNESS_CURVES, default=b_curves_val): TextSelector(
+                TextSelectorConfig(multiline=True)
+            ),
         }
     )
     return vol.Schema(schema)
 
 
-def _validate_input(user_input: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
+def _validate_input(
+    user_input: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, str]]:
     """Validate user input and parse YAML schedule and curves."""
     errors: dict[str, str] = {}
     cleaned = dict(user_input)

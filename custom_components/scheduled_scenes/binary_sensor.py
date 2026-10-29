@@ -81,9 +81,7 @@ class ScheduledSceneDimToWarmBinarySensor(BinarySensorEntity):
 
     async def async_added_to_hass(self) -> None:
         """Subscribe to program state changes."""
-        self.async_on_remove(
-            self.program.async_add_listener(self.async_write_ha_state)
-        )
+        self.async_on_remove(self.program.async_add_listener(self.async_write_ha_state))
 
 
 class ScheduledSceneBrightnessCurveBinarySensor(BinarySensorEntity):
@@ -100,7 +98,9 @@ class ScheduledSceneBrightnessCurveBinarySensor(BinarySensorEntity):
 
         display_name = program.name.replace("_", " ").title()
         self._attr_name = f"{display_name} Brightness Curve In Use"
-        self._attr_unique_id = f"scheduled_scenes_{program.name}_brightness_curve_in_use"
+        self._attr_unique_id = (
+            f"scheduled_scenes_{program.name}_brightness_curve_in_use"
+        )
         self._attr_device_info = _build_device_info(program, entry_id)
 
     @property
@@ -116,15 +116,15 @@ class ScheduledSceneBrightnessCurveBinarySensor(BinarySensorEntity):
             "curves": list(self.program.brightness_curves.keys()),
             "lights": list(self.program.light_brightness_curves.keys()),
             "active_lights_on": [
-                lt for lt in self.program.light_brightness_curves if self.program.is_light_on(lt)
+                lt
+                for lt in self.program.light_brightness_curves
+                if self.program.is_light_on(lt)
             ],
         }
 
     async def async_added_to_hass(self) -> None:
         """Subscribe to program state changes."""
-        self.async_on_remove(
-            self.program.async_add_listener(self.async_write_ha_state)
-        )
+        self.async_on_remove(self.program.async_add_listener(self.async_write_ha_state))
 
 
 class ScheduledSceneProblemBinarySensor(BinarySensorEntity):
@@ -162,6 +162,4 @@ class ScheduledSceneProblemBinarySensor(BinarySensorEntity):
 
     async def async_added_to_hass(self) -> None:
         """Subscribe to program state changes."""
-        self.async_on_remove(
-            self.program.async_add_listener(self.async_write_ha_state)
-        )
+        self.async_on_remove(self.program.async_add_listener(self.async_write_ha_state))

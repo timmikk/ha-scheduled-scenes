@@ -65,7 +65,9 @@ class ScheduledSceneSensor(SensorEntity):
         t = self.program.current_transition
         if t is None:
             return "idle"
-        return f"{t.start_step.time.strftime('%H:%M')}-{t.end_step.time.strftime('%H:%M')}"
+        return (
+            f"{t.start_step.time.strftime('%H:%M')}-{t.end_step.time.strftime('%H:%M')}"
+        )
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -96,9 +98,7 @@ class ScheduledSceneSensor(SensorEntity):
 
     async def async_added_to_hass(self) -> None:
         """Subscribe to program state changes."""
-        self.async_on_remove(
-            self.program.async_add_listener(self.async_write_ha_state)
-        )
+        self.async_on_remove(self.program.async_add_listener(self.async_write_ha_state))
 
 
 class ScheduledSceneModeSensor(SensorEntity):
@@ -135,9 +135,7 @@ class ScheduledSceneModeSensor(SensorEntity):
 
     async def async_added_to_hass(self) -> None:
         """Subscribe to program state changes."""
-        self.async_on_remove(
-            self.program.async_add_listener(self.async_write_ha_state)
-        )
+        self.async_on_remove(self.program.async_add_listener(self.async_write_ha_state))
 
 
 class ScheduledSceneBrightnessSensor(SensorEntity):
@@ -184,9 +182,7 @@ class ScheduledSceneBrightnessSensor(SensorEntity):
 
     async def async_added_to_hass(self) -> None:
         """Subscribe to program state changes."""
-        self.async_on_remove(
-            self.program.async_add_listener(self.async_write_ha_state)
-        )
+        self.async_on_remove(self.program.async_add_listener(self.async_write_ha_state))
 
 
 class ScheduledSceneLastCommandSensor(SensorEntity):
@@ -222,6 +218,4 @@ class ScheduledSceneLastCommandSensor(SensorEntity):
 
     async def async_added_to_hass(self) -> None:
         """Subscribe to program state changes."""
-        self.async_on_remove(
-            self.program.async_add_listener(self.async_write_ha_state)
-        )
+        self.async_on_remove(self.program.async_add_listener(self.async_write_ha_state))
