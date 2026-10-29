@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Virtual room light entity (`light.<room>_lights`) providing native Home Assistant light controls (task #4):
+  - On / Off toggle: turning on enables `auto` mode, clears manual overrides, and transitions room lights to current scheduled brightness and color temperature; turning off shuts down room fixtures.
+  - Brightness slider: sets manual room brightness percentage, entering `manual` mode (suspending automated periodic transitions); evaluates dim-to-warm curves when configured, or preserves active scheduled Kelvin when dim-to-warm is disabled to prevent sudden color temp jumps.
+  - Color temperature control: adjust Kelvin directly on the virtual light entity to manually override room color temperature.
+- Schedule brightness offset slider (`number.<room>_brightness_offset`) shifting baseline circadian brightness (-50% to +50%) while staying in `auto` mode (task #4).
+
 ## [0.3.0] - 2026-10-29
 
 ### Added
@@ -47,8 +54,3 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Runtime coordinator with periodic interval timers, entity state triggers, and duration disable timer.
 - Platforms: `switch.schedule_<name>` and `sensor.<name>_schedule_phase`.
 - Services: `scheduled_scenes.turn_on`, `turn_off`, `enable`, `disable`, `reload`, plus legacy alias services.
-
-## [0.0.1] - 2026-10-27
-
-- Initial scaffold via infra task #200 (`scripts/setup-ha-component-repo.sh`).
-  Empty `async_setup` shell; not yet functional.

@@ -11,24 +11,28 @@ HACS-installable. See `info.md` for install/rollback instructions.
 ## Features
 
 - **Continuous Circadian & Schedule Interpolation**: Seamlessly interpolates brightness and color temperature (Kelvin) between defined time checkpoints across 24 hours.
+- **Unified Virtual Room Light Entity**: Control the entire room as a standard Home Assistant `light` entity (`light.<room>_lights`) with On/Off, brightness percentage, and manual color temperature adjustments. Toggling ON restores automated circadian transitions; moving brightness or color temperature sliders engages smooth manual override.
+- **Schedule Brightness Offset**: Nudge 24-hour scheduled brightness levels up or down (`-50%` to `+50%`) via a slider (`number.<room>_brightness_offset`) without breaking continuous automated transitions.
 - **Interactive Brightness Stepping & Manual Override**: Increase or decrease room brightness in discrete steps (e.g. +10% / -10%) via wall buttons, remotes, or automations. Setting manual brightness suspends automated schedule transitions so periodic updates don't revert user adjustments.
 - **Start Brightness Estimation**: When brightness stepping is triggered, the integration estimates the room's current brightness level by inspecting active physical light states and inverting brightness curves, preventing abrupt jumps or wrong-direction stepping.
 - **Room Brightness Distribution Curves**: Define non-linear light distribution across room brightness levels (e.g. mood lights at 100% while ceiling downlights are only at 30% when room brightness is 50%).
-- **Dim-to-Warm Synergy**: Brightness adjustments automatically evaluate each fixture's configured dim-to-warm curve, smoothly warming or cooling the room as it dims or brightens.
+- **Dim-to-Warm Synergy**: Brightness adjustments automatically evaluate each fixture's configured dim-to-warm curve, smoothly warming or cooling the room as it dims or brightens. When dim-to-warm is disabled, brightness adjustments preserve the active scheduled color temperature.
 - **Status & Diagnostic Entities**: Complete suite of entities per room program for operational mode, live room brightness, command history, curve usage, and problem monitoring.
-- **Unified Device Grouping**: Automatically groups all switches, sensors, and diagnostic binary sensors into a clean Home Assistant Device per room.
+- **Unified Device Grouping**: Automatically groups all lights, switches, sliders, sensors, and diagnostic binary sensors into a clean Home Assistant Device per room.
 - **Midnight Wrapping**: Full mathematical support for schedules crossing midnight (e.g. 23:00 to 07:00).
 - **Per-Light Overrides**: Override brightness or color temperature for specific lights within a multi-light room program.
 - **Smart Light Automation**: Automatically adapts transitions when lights are turned on or off.
 - **Two-Tier Configuration**: Configure effortlessly via YAML under `scheduled_scenes:` or directly via the Home Assistant UI / Config Flow.
 - **Domain Services**: Provides `scheduled_scenes.turn_on`, `turn_off`, `enable`, `disable`, `adjust_brightness`, `step_brightness`, `resume_schedule`, and `reload`, plus legacy alias services (`<name>_adjust_brightness`, etc.).
 
-## Status & Diagnostic Entities
+## Control, Status & Diagnostic Entities
 
 Each configured room program registers a Home Assistant Device grouping the following entities:
 
 | Entity | Platform | ID Pattern | Description |
 |--------|----------|------------|-------------|
+| **Room Lights** | `light` | `light.<room>_lights` | Primary room light control: On/Off, Brightness slider, and Color Temperature override. Toggling ON restores automated schedule; moving sliders engages manual override. |
+| **Brightness Offset** | `number` | `number.<room>_brightness_offset` | Schedule brightness offset slider (`-50%` to `+50%`) shifting baseline room brightness without leaving `auto` mode. |
 | **Schedule Switch** | `switch` | `switch.schedule_<room>` | Enable or disable automated schedule transitions for the room. |
 | **Schedule Phase** | `sensor` | `sensor.<room>_schedule_phase` | Current active schedule interval (`HH:MM-HH:MM` or `idle`), with start/end brightness and Kelvin in attributes. |
 | **Current Mode** | `sensor` | `sensor.<room>_mode` | Operational mode: `off` (disabled manually), `auto-off` (lights off/standby), `auto` (schedule actively driving lights), or `manual` (manual brightness override active). |
