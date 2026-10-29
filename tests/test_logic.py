@@ -38,15 +38,17 @@ def test_parse_time():
 
 def test_parse_schedule_step():
     """Verify parsing a step with and without per-light overrides."""
-    step = parse_schedule_step({
-        "time": "14:00",
-        "brightness": 80,
-        "temp": 4500,
-        "lights": {
-            "light.desk": {"brightness": 100, "temp": 6000},
-            "light.ambient": {"temp": 3000},
-        },
-    })
+    step = parse_schedule_step(
+        {
+            "time": "14:00",
+            "brightness": 80,
+            "temp": 4500,
+            "lights": {
+                "light.desk": {"brightness": 100, "temp": 6000},
+                "light.ambient": {"temp": 3000},
+            },
+        }
+    )
     assert step.time == time(14, 0)
     assert step.brightness == 80
     assert step.temp == 4500
@@ -56,21 +58,25 @@ def test_parse_schedule_step():
 
 def test_parse_schedule_step_dim_to_warm_and_omitted_temp():
     """Verify parsing a step with dim_to_warm aliases and omitted temp."""
-    step1 = parse_schedule_step({
-        "time": "08:00",
-        "dim_to_warm": 40,
-    })
+    step1 = parse_schedule_step(
+        {
+            "time": "08:00",
+            "dim_to_warm": 40,
+        }
+    )
     assert step1.time == time(8, 0)
     assert step1.brightness == 40
     assert step1.temp is None
 
-    step2 = parse_schedule_step({
-        "time": "18:00",
-        "dimm_to_warm": 65,
-        "lights": {
-            "light.spot": {"dim_to_warm": 30},
-        },
-    })
+    step2 = parse_schedule_step(
+        {
+            "time": "18:00",
+            "dimm_to_warm": 65,
+            "lights": {
+                "light.spot": {"dim_to_warm": 30},
+            },
+        }
+    )
     assert step2.brightness == 65
     assert step2.temp is None
     assert step2.lights["light.spot"] == LightOverride(brightness=30, temp=None)
@@ -135,7 +141,11 @@ def test_dim_to_warm_curve_evaluation():
     # Flat segment (consecutive identical points)
     flat_curve = DimToWarmCurve(
         name="flat",
-        points=[DimToWarmPoint(20, 2500), DimToWarmPoint(20, 2500), DimToWarmPoint(80, 4000)],
+        points=[
+            DimToWarmPoint(20, 2500),
+            DimToWarmPoint(20, 2500),
+            DimToWarmPoint(80, 4000),
+        ],
     )
     assert flat_curve.evaluate(20) == 2500
 
@@ -286,11 +296,20 @@ def test_estimate_room_brightness():
     # light.ceiling reaches 30% at 50% room brightness
     accent = BrightnessCurve(
         name="accent",
-        points=[BrightnessPoint(0, 0), BrightnessPoint(50, 100), BrightnessPoint(100, 100)],
+        points=[
+            BrightnessPoint(0, 0),
+            BrightnessPoint(50, 100),
+            BrightnessPoint(100, 100),
+        ],
     )
     ceiling = BrightnessCurve(
         name="ceiling",
-        points=[BrightnessPoint(0, 0), BrightnessPoint(30, 0), BrightnessPoint(50, 30), BrightnessPoint(100, 100)],
+        points=[
+            BrightnessPoint(0, 0),
+            BrightnessPoint(30, 0),
+            BrightnessPoint(50, 30),
+            BrightnessPoint(100, 100),
+        ],
     )
     curves = {"light.accent": accent, "light.ceiling": ceiling}
 
@@ -307,11 +326,19 @@ def test_calculate_manual_light_state():
     """Verify manual room brightness calculation combined with dim-to-warm curves."""
     b_curve = BrightnessCurve(
         name="accent",
-        points=[BrightnessPoint(0, 0), BrightnessPoint(50, 100), BrightnessPoint(100, 100)],
+        points=[
+            BrightnessPoint(0, 0),
+            BrightnessPoint(50, 100),
+            BrightnessPoint(100, 100),
+        ],
     )
     dtw_curve = DimToWarmCurve(
         name="dtw",
-        points=[DimToWarmPoint(1, 2000), DimToWarmPoint(50, 2700), DimToWarmPoint(100, 4000)],
+        points=[
+            DimToWarmPoint(1, 2000),
+            DimToWarmPoint(50, 2700),
+            DimToWarmPoint(100, 4000),
+        ],
     )
     b_curves = {"light.accent": b_curve}
     dtw_curves = {"light.accent": dtw_curve}
@@ -327,7 +354,9 @@ def test_calculate_manual_light_state():
     assert temp25 == 2700
 
     # Light without any curves: room brightness 60% -> light brightness 60%, default 2700K
-    b_std, temp_std = calculate_manual_light_state(60, "light.standard", b_curves, dtw_curves)
+    b_std, temp_std = calculate_manual_light_state(
+        60, "light.standard", b_curves, dtw_curves
+    )
     assert b_std == 60
     assert temp_std == DEFAULT_COLOR_TEMP
 
@@ -385,12 +414,14 @@ def test_resolve_active_transition_empty_and_single():
 
 def test_resolve_active_transition_daytime():
     """Verify interval resolution during middle of day."""
-    steps = parse_schedule([
-        {"time": "05:00", "brightness": 10, "temp": 2000},
-        {"time": "07:00", "brightness": 30, "temp": 3000},
-        {"time": "14:00", "brightness": 100, "temp": 5000},
-        {"time": "22:00", "brightness": 20, "temp": 2000},
-    ])
+    steps = parse_schedule(
+        [
+            {"time": "05:00", "brightness": 10, "temp": 2000},
+            {"time": "07:00", "brightness": 30, "temp": 3000},
+            {"time": "14:00", "brightness": 100, "temp": 5000},
+            {"time": "22:00", "brightness": 20, "temp": 2000},
+        ]
+    )
 
     now = datetime(2026, 10, 27, 6, 0, 0)
     trans = resolve_active_transition(steps, now)
@@ -407,11 +438,13 @@ def test_resolve_active_transition_daytime():
 
 def test_resolve_active_transition_midnight_wrap():
     """Verify interval resolution wrapping across midnight."""
-    steps = parse_schedule([
-        {"time": "05:00", "brightness": 10, "temp": 2000},
-        {"time": "14:00", "brightness": 100, "temp": 5000},
-        {"time": "23:00", "brightness": 40, "temp": 2000},
-    ])
+    steps = parse_schedule(
+        [
+            {"time": "05:00", "brightness": 10, "temp": 2000},
+            {"time": "14:00", "brightness": 100, "temp": 5000},
+            {"time": "23:00", "brightness": 40, "temp": 2000},
+        ]
+    )
 
     now = datetime(2026, 10, 27, 2, 0, 0)
     trans = resolve_active_transition(steps, now)
@@ -534,7 +567,9 @@ def test_calculate_light_state_with_dim_to_warm_curves():
         total_seconds=14400.0,
         seconds_from_start=0.0,
     )
-    b_ovr, k_ovr = calculate_light_state(trans_override, "light.curve_light", light_curves)
+    b_ovr, k_ovr = calculate_light_state(
+        trans_override, "light.curve_light", light_curves
+    )
     assert b_ovr == 10
     assert k_ovr == curve.evaluate(10)
 
@@ -583,10 +618,12 @@ def test_edge_cases_and_zero_seconds():
 
 def test_coverage_branches():
     """Cover non-dict props, non-advancing steps, and None fallback."""
-    step = parse_schedule_step({
-        "time": "10:00",
-        "lights": {"light.invalid": "not_a_dict"},
-    })
+    step = parse_schedule_step(
+        {
+            "time": "10:00",
+            "lights": {"light.invalid": "not_a_dict"},
+        }
+    )
     assert "light.invalid" not in step.lights
 
     step1 = ScheduleStep(time=time(10, 0), brightness=50, temp=3000)

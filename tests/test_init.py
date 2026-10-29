@@ -92,8 +92,12 @@ async def test_async_setup_with_yaml_curves(hass: HomeAssistant) -> None:
         await hass.async_block_till_done()
         assert mock_init.called
         call_args = mock_init.call_args[1]
-        assert call_args["data"][CONF_CURVES]["warm_spots"]["lights"] == ["light.kitchen_spot"]
-        assert call_args["data"][CONF_BRIGHTNESS_CURVES]["spot_curve"]["lights"] == ["light.kitchen_spot"]
+        assert call_args["data"][CONF_CURVES]["warm_spots"]["lights"] == [
+            "light.kitchen_spot"
+        ]
+        assert call_args["data"][CONF_BRIGHTNESS_CURVES]["spot_curve"]["lights"] == [
+            "light.kitchen_spot"
+        ]
 
 
 async def test_domain_services_and_legacy_aliases(hass: HomeAssistant) -> None:
@@ -256,7 +260,10 @@ async def test_domain_services_and_legacy_aliases(hass: HomeAssistant) -> None:
         assert mock_reload.called
 
     # Reload service call
-    with patch("custom_components.scheduled_scenes.async_integration_yaml_config", return_value=None):
+    with patch(
+        "custom_components.scheduled_scenes.async_integration_yaml_config",
+        return_value=None,
+    ):
         await hass.services.async_call(DOMAIN, SERVICE_RELOAD, {})
         await hass.async_block_till_done()
 

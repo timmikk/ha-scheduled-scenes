@@ -203,6 +203,7 @@ accent:
     assert "spots" in result2["data"][CONF_CURVES]
     assert "accent" in result2["data"][CONF_BRIGHTNESS_CURVES]
 
+
 async def test_config_flow_import_success(hass: HomeAssistant) -> None:
     """Test successful YAML import flow."""
     import_data = {

@@ -51,13 +51,17 @@ PRODUCTION_ROOMS = {
                 "time": "19:00",
                 "brightness": 100,
                 "temp": 3000,
-                "lights": {"light.olohuone_valonauha": {"temp": 2700, "brightness": 60}},
+                "lights": {
+                    "light.olohuone_valonauha": {"temp": 2700, "brightness": 60}
+                },
             },
             {
                 "time": "20:00",
                 "brightness": 70,
                 "temp": 2500,
-                "lights": {"light.olohuone_valonauha": {"temp": 2300, "brightness": 50}},
+                "lights": {
+                    "light.olohuone_valonauha": {"temp": 2300, "brightness": 50}
+                },
             },
             {
                 "time": "22:00",
@@ -85,13 +89,17 @@ PRODUCTION_ROOMS = {
                 "time": "21:00",
                 "brightness": 50,
                 "temp": 2000,
-                "lights": {"light.keittio_valonauha_2": {"temp": 1000, "brightness": 30}},
+                "lights": {
+                    "light.keittio_valonauha_2": {"temp": 1000, "brightness": 30}
+                },
             },
             {
                 "time": "23:00",
                 "brightness": 30,
                 "temp": 2000,
-                "lights": {"light.keittio_valonauha_2": {"temp": 1000, "brightness": 1}},
+                "lights": {
+                    "light.keittio_valonauha_2": {"temp": 1000, "brightness": 1}
+                },
             },
         ],
     },

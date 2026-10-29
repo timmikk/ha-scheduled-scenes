@@ -52,13 +52,17 @@ async def test_coordinator_turn_on_and_off(hass: HomeAssistant) -> None:
         # Turn On
         await program.async_turn_on(transition_time=1.0)
         assert program.enabled is True
-        assert any(c[1] == "turn_on" and c[2]["entity_id"] == "light.desk" for c in calls)
+        assert any(
+            c[1] == "turn_on" and c[2]["entity_id"] == "light.desk" for c in calls
+        )
 
         # Turn Off
         calls.clear()
         await program.async_turn_off(transition_time=1.0)
         assert program.enabled is False
-        assert any(c[1] == "turn_off" and c[2]["entity_id"] == ["light.desk"] for c in calls)
+        assert any(
+            c[1] == "turn_off" and c[2]["entity_id"] == ["light.desk"] for c in calls
+        )
     finally:
         await program.async_stop()
 
@@ -79,7 +83,10 @@ async def test_coordinator_dim_to_warm_curves(hass: HomeAssistant) -> None:
             }
         },
         CONF_SCHEDULE: [
-            {"time": "00:00", "brightness": 50},  # temp omitted -> curve evaluates at 50% = 2700K
+            {
+                "time": "00:00",
+                "brightness": 50,
+            },  # temp omitted -> curve evaluates at 50% = 2700K
             {"time": "23:59", "brightness": 50},
         ],
     }
@@ -164,11 +171,15 @@ async def test_coordinator_adjust_brightness_and_resume(hass: HomeAssistant) -> 
         await program.async_adjust_brightness(step=10, transition=0.5)
         assert program.manual_brightness == 60
 
-        accent_call = next(c for c in calls if c[2]["entity_id"] == "light.living_accent")
+        accent_call = next(
+            c for c in calls if c[2]["entity_id"] == "light.living_accent"
+        )
         assert accent_call[2]["brightness_pct"] == 100
         assert accent_call[2]["color_temp_kelvin"] == 4000
 
-        ceiling_call = next(c for c in calls if c[2]["entity_id"] == "light.living_ceiling")
+        ceiling_call = next(
+            c for c in calls if c[2]["entity_id"] == "light.living_ceiling"
+        )
         assert ceiling_call[2]["brightness_pct"] == 44
 
         # Subsequent step +10% follows manual_brightness without jitter: 60 + 10 = 70%
@@ -181,7 +192,9 @@ async def test_coordinator_adjust_brightness_and_resume(hass: HomeAssistant) -> 
         await program.async_adjust_brightness(brightness=50, transition=0.5)
         assert program.manual_brightness == 50
         accent_50 = next(c for c in calls if c[2]["entity_id"] == "light.living_accent")
-        ceiling_50 = next(c for c in calls if c[2]["entity_id"] == "light.living_ceiling")
+        ceiling_50 = next(
+            c for c in calls if c[2]["entity_id"] == "light.living_ceiling"
+        )
         assert accent_50[2]["brightness_pct"] == 100
         assert ceiling_50[2]["brightness_pct"] == 30
 
@@ -204,6 +217,7 @@ async def test_coordinator_adjust_brightness_and_resume(hass: HomeAssistant) -> 
         # Trigger state change handler
         event_data = {"new_state": hass.states.get("light.living_ceiling")}
         from homeassistant.core import Event
+
         await program._async_light_state_change(Event("state_changed", event_data))
         assert program.manual_brightness is None
     finally:
@@ -276,6 +290,9 @@ async def test_integration_setup_and_services(hass: HomeAssistant) -> None:
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
+    hass.services.async_register("light", "turn_on", mock_light_service)
+    hass.services.async_register("light", "turn_off", mock_light_service)
+
     switch_state = hass.states.get("switch.schedule_lounge")
     assert switch_state is not None
     assert switch_state.state == "on"
@@ -283,15 +300,21 @@ async def test_integration_setup_and_services(hass: HomeAssistant) -> None:
     sensor_state = hass.states.get("sensor.lounge_schedule_phase")
     assert sensor_state is not None
 
-    await hass.services.async_call(DOMAIN, SERVICE_TURN_ON, {"entity_id": "switch.schedule_lounge"})
+    await hass.services.async_call(
+        DOMAIN, SERVICE_TURN_ON, {"entity_id": "switch.schedule_lounge"}
+    )
     await hass.async_block_till_done()
     assert any(c[0] == "turn_on" for c in light_calls)
 
-    await hass.services.async_call(DOMAIN, SERVICE_DISABLE, {"entity_id": "switch.schedule_lounge"})
+    await hass.services.async_call(
+        DOMAIN, SERVICE_DISABLE, {"entity_id": "switch.schedule_lounge"}
+    )
     await hass.async_block_till_done()
     assert hass.states.get("switch.schedule_lounge").state == "off"
 
-    await hass.services.async_call(DOMAIN, SERVICE_ENABLE, {"entity_id": "switch.schedule_lounge"})
+    await hass.services.async_call(
+        DOMAIN, SERVICE_ENABLE, {"entity_id": "switch.schedule_lounge"}
+    )
     await hass.async_block_till_done()
     assert hass.states.get("switch.schedule_lounge").state == "on"
 
@@ -351,11 +374,15 @@ async def test_switch_and_sensor_entities(hass: HomeAssistant) -> None:
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
-    await hass.services.async_call("switch", "turn_off", {"entity_id": "switch.schedule_office"})
+    await hass.services.async_call(
+        "switch", "turn_off", {"entity_id": "switch.schedule_office"}
+    )
     await hass.async_block_till_done()
     assert hass.states.get("switch.schedule_office").state == "off"
 
-    await hass.services.async_call("switch", "turn_on", {"entity_id": "switch.schedule_office"})
+    await hass.services.async_call(
+        "switch", "turn_on", {"entity_id": "switch.schedule_office"}
+    )
     await hass.async_block_till_done()
     assert hass.states.get("switch.schedule_office").state == "on"
 
@@ -495,7 +522,9 @@ async def test_diagnostic_status_entities_lifecycle(hass: HomeAssistant) -> None
     assert command_state.state == "auto off"
 
     # 7. Explicitly disable schedule via switch -> mode becomes off, command is disable
-    await hass.services.async_call("switch", "turn_off", {"entity_id": "switch.schedule_office"})
+    await hass.services.async_call(
+        "switch", "turn_off", {"entity_id": "switch.schedule_office"}
+    )
     await hass.async_block_till_done()
 
     mode_state = hass.states.get("sensor.office_mode")
@@ -505,7 +534,9 @@ async def test_diagnostic_status_entities_lifecycle(hass: HomeAssistant) -> None
     assert command_state.state == "disable"
 
     # 8. Explicitly re-enable switch -> mode returns to auto-off (since lights are off)
-    await hass.services.async_call("switch", "turn_on", {"entity_id": "switch.schedule_office"})
+    await hass.services.async_call(
+        "switch", "turn_on", {"entity_id": "switch.schedule_office"}
+    )
     await hass.async_block_till_done()
 
     mode_state = hass.states.get("sensor.office_mode")
@@ -652,7 +683,9 @@ async def test_device_registry_grouping(hass: HomeAssistant) -> None:
 
     for ent_id in expected_entities:
         reg_entry = entity_registry.async_get(ent_id)
-        assert reg_entry is not None, f"Entity {ent_id} not registered in entity registry"
+        assert reg_entry is not None, (
+            f"Entity {ent_id} not registered in entity registry"
+        )
         assert reg_entry.device_id == device.id
 
     assert await hass.config_entries.async_unload(entry.entry_id)
