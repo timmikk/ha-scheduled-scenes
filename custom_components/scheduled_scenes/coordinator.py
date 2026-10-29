@@ -39,6 +39,7 @@ from .const import (
     DEFAULT_TRANSITION_TIME_ON_LIGHT_TURN_ON,
 )
 from .logic import (
+    DEFAULT_COLOR_TEMP,
     ActiveTransition,
     BrightnessCurve,
     DimToWarmCurve,
@@ -66,7 +67,9 @@ class ScheduledSceneProgram:
 
         self.name: str = config.get(CONF_NAME, "")
         self.lights: list[str] = list(config.get(CONF_LIGHTS, []))
-        self.transition_time: float = float(config.get(CONF_TRANSITION_TIME, DEFAULT_TRANSITION_TIME))
+        self.transition_time: float = float(
+            config.get(CONF_TRANSITION_TIME, DEFAULT_TRANSITION_TIME)
+        )
         self.transition_interval: float = float(
             config.get(CONF_TRANSITION_INTERVAL, DEFAULT_TRANSITION_INTERVAL)
         )
@@ -80,7 +83,9 @@ class ScheduledSceneProgram:
             config.get(CONF_TRANSITION_TIME_ON, DEFAULT_TRANSITION_TIME_ON)
         )
         self.enable_when_light_turn_on: bool = bool(
-            config.get(CONF_ENABLE_WHEN_LIGHT_TURN_ON, DEFAULT_ENABLE_WHEN_LIGHT_TURN_ON)
+            config.get(
+                CONF_ENABLE_WHEN_LIGHT_TURN_ON, DEFAULT_ENABLE_WHEN_LIGHT_TURN_ON
+            )
         )
         self.disable_when_lights_off: bool = bool(
             config.get(CONF_DISABLE_WHEN_LIGHTS_OFF, DEFAULT_DISABLE_WHEN_LIGHTS_OFF)
@@ -94,7 +99,9 @@ class ScheduledSceneProgram:
 
         self.curves: dict[str, DimToWarmCurve]
         self.light_curves: dict[str, DimToWarmCurve]
-        self.curves, self.light_curves = parse_dim_to_warm_curves(config.get(CONF_CURVES))
+        self.curves, self.light_curves = parse_dim_to_warm_curves(
+            config.get(CONF_CURVES)
+        )
 
         self.brightness_curves: dict[str, BrightnessCurve]
         self.light_brightness_curves: dict[str, BrightnessCurve]
@@ -102,10 +109,14 @@ class ScheduledSceneProgram:
             config.get(CONF_BRIGHTNESS_CURVES)
         )
 
-        self.schedule: list[ScheduleStep] = parse_schedule(config.get(CONF_SCHEDULE, []))
+        self.schedule: list[ScheduleStep] = parse_schedule(
+            config.get(CONF_SCHEDULE, [])
+        )
 
         self.enabled: bool = True
         self.manual_brightness: int | None = None
+        self.manual_color_temp: int | None = None
+        self.brightness_offset: int = 0
         self.current_transition: ActiveTransition | None = None
         self._listeners: list[Callable[[], None]] = []
 
@@ -137,7 +148,9 @@ class ScheduledSceneProgram:
         for update_callback in self._listeners:
             update_callback()
 
-    def _record_command(self, command: str, details: dict[str, Any] | None = None) -> None:
+    def _record_command(
+        self, command: str, details: dict[str, Any] | None = None
+    ) -> None:
         """Record the last executed command with timestamp and details."""
         self.last_command = command
         self.last_command_timestamp = dt_util.now()
@@ -173,7 +186,7 @@ class ScheduledSceneProgram:
             if self._auto_disabled_by_lights_off:
                 return "auto-off"
             return "off"
-        if self.manual_brightness is not None:
+        if self.manual_brightness is not None or self.manual_color_temp is not None:
             return "manual"
         if not self.is_any_light_on():
             return "auto-off"
@@ -198,9 +211,39 @@ class ScheduledSceneProgram:
                     current_states[light_id] = 100
 
         if current_states:
-            return estimate_room_brightness(current_states, self.light_brightness_curves)
+            return estimate_room_brightness(
+                current_states, self.light_brightness_curves
+            )
 
         return 0
+
+    def get_current_room_color_temp(self) -> int:
+        """Return current effective room color temperature in Kelvin."""
+        if self.manual_color_temp is not None:
+            return self.manual_color_temp
+
+        active_temps: list[int] = []
+        for light_id in self.lights:
+            st = self.hass.states.get(light_id)
+            if st is not None and st.state == "on":
+                kelvin = st.attributes.get("color_temp_kelvin")
+                if kelvin is not None:
+                    active_temps.append(int(kelvin))
+
+        if active_temps:
+            return round(sum(active_temps) / len(active_temps))
+
+        if self.current_transition is not None and self.lights:
+            _, temp = calculate_light_state(
+                self.current_transition,
+                self.lights[0],
+                self.light_curves,
+                self.light_brightness_curves,
+                self.brightness_offset,
+            )
+            return temp
+
+        return DEFAULT_COLOR_TEMP
 
     def get_unavailable_lights(self) -> list[str]:
         """Return list of light entities that are unavailable or missing."""
@@ -300,7 +343,9 @@ class ScheduledSceneProgram:
         if val == "on":
             self._auto_disabled_by_lights_off = False
             if self.enable_when_light_turn_on:
-                self._record_command("auto on", {"trigger": "light_turn_on", "light": entity_id})
+                self._record_command(
+                    "auto on", {"trigger": "light_turn_on", "light": entity_id}
+                )
                 if self.allow_turn_on_if_any_on:
                     await self.async_turn_on()
                 else:
@@ -313,6 +358,7 @@ class ScheduledSceneProgram:
         elif val in ("off", "unavailable"):
             if not self.is_any_light_on():
                 self.manual_brightness = None
+                self.manual_color_temp = None
                 if self._unsub_override_timer:
                     self._unsub_override_timer()
                     self._unsub_override_timer = None
@@ -326,7 +372,11 @@ class ScheduledSceneProgram:
 
     async def _async_periodic_callback(self, now: datetime) -> None:
         """Periodic timer callback."""
-        if self.enabled and self.manual_brightness is None:
+        if (
+            self.enabled
+            and self.manual_brightness is None
+            and self.manual_color_temp is None
+        ):
             self._record_command("periodic update", {"time": now.isoformat()})
             await self.async_transition()
 
@@ -347,7 +397,9 @@ class ScheduledSceneProgram:
         self.current_transition = transition
 
         if allow_turn_lights_on is None:
-            allow_turn_lights_on = self.allow_turn_on_if_any_on and self.is_any_light_on()
+            allow_turn_lights_on = (
+                self.allow_turn_on_if_any_on and self.is_any_light_on()
+            )
 
         transition_seconds = calculate_transition_seconds(
             transition,
@@ -366,6 +418,7 @@ class ScheduledSceneProgram:
                     light_id,
                     self.light_curves,
                     self.light_brightness_curves,
+                    self.brightness_offset,
                 )
                 curve_info = self.light_curves.get(light_id)
                 _LOGGER.debug(
@@ -394,9 +447,13 @@ class ScheduledSceneProgram:
         step: int | None = None,
         brightness: int | None = None,
         transition: float | None = None,
+        color_temp: int | None = None,
     ) -> None:
         """Adjust or set room brightness, pausing automatic schedule transitions."""
         self._auto_disabled_by_lights_off = False
+        if color_temp is not None:
+            self.manual_color_temp = int(color_temp)
+
         if step is None and brightness is None:
             step = 10
 
@@ -432,6 +489,7 @@ class ScheduledSceneProgram:
             self._unsub_override_timer = None
 
         if self.manual_override_timeout > 0:
+
             @callback
             def _auto_resume(_now: datetime) -> None:
                 self.hass.async_create_task(self.async_resume_schedule())
@@ -446,12 +504,22 @@ class ScheduledSceneProgram:
 
         if brightness is not None:
             self._record_command(
-                "set brightness", {"target_brightness": target_b, "transition": t_time}
+                "set brightness",
+                {
+                    "target_brightness": target_b,
+                    "target_color_temp": self.manual_color_temp,
+                    "transition": t_time,
+                },
             )
         else:
             self._record_command(
                 "step brightness",
-                {"step": step, "target_brightness": target_b, "transition": t_time},
+                {
+                    "step": step,
+                    "target_brightness": target_b,
+                    "target_color_temp": self.manual_color_temp,
+                    "transition": t_time,
+                },
             )
 
         if target_b == 0:
@@ -462,12 +530,29 @@ class ScheduledSceneProgram:
                     {"entity_id": self.lights, "transition": t_time},
                 )
         else:
+            now = dt_util.now()
+            sched_transition = self.current_transition or resolve_active_transition(
+                self.schedule, now
+            )
             for light_id in self.lights:
+                if sched_transition:
+                    _, sched_temp = calculate_light_state(
+                        sched_transition,
+                        light_id,
+                        self.light_curves,
+                        self.light_brightness_curves,
+                        self.brightness_offset,
+                    )
+                else:
+                    sched_temp = DEFAULT_COLOR_TEMP
+
                 light_b, light_temp = calculate_manual_light_state(
                     target_b,
                     light_id,
                     self.light_brightness_curves,
                     self.light_curves,
+                    default_temp=sched_temp,
+                    manual_color_temp=self.manual_color_temp,
                 )
                 if light_b <= 0:
                     await self._async_call_service(
@@ -489,16 +574,61 @@ class ScheduledSceneProgram:
 
         self._notify_listeners()
 
+    async def async_set_manual_color_temp(
+        self,
+        kelvin: int,
+        transition: float | None = None,
+    ) -> None:
+        """Manually override room color temperature."""
+        self._auto_disabled_by_lights_off = False
+        self.manual_color_temp = int(kelvin)
+        t_time = transition if transition is not None else self.transition_time_on
+
+        self._record_command(
+            "set color temp",
+            {"target_color_temp": self.manual_color_temp, "transition": t_time},
+        )
+
+        for light_id in self.lights:
+            st = self.hass.states.get(light_id)
+            if st is not None and st.state == "on":
+                await self._async_call_service(
+                    "light",
+                    "turn_on",
+                    {
+                        "entity_id": light_id,
+                        "color_temp_kelvin": self.manual_color_temp,
+                        "transition": t_time,
+                    },
+                )
+
+        self._notify_listeners()
+
+    async def async_set_brightness_offset(self, offset: int) -> None:
+        """Set schedule brightness offset (-50 to +50%)."""
+        self.brightness_offset = max(-50, min(50, int(offset)))
+        self._record_command(
+            "set brightness offset", {"offset": self.brightness_offset}
+        )
+        if self.enabled and self.manual_brightness is None:
+            await self.async_transition(
+                transition_time_override=self.transition_time_on
+            )
+        self._notify_listeners()
+
     async def async_resume_schedule(self, transition_time: float | None = None) -> None:
-        """Clear manual brightness override and resume automatic schedule transitions."""
+        """Clear manual brightness/temp overrides and resume automatic schedule transitions."""
         if self._unsub_override_timer:
             self._unsub_override_timer()
             self._unsub_override_timer = None
 
         self._auto_disabled_by_lights_off = False
-        t_time = transition_time if transition_time is not None else self.transition_time_on
+        t_time = (
+            transition_time if transition_time is not None else self.transition_time_on
+        )
         self._record_command("resume schedule", {"transition": t_time})
         self.manual_brightness = None
+        self.manual_color_temp = None
         if self.enabled:
             await self.async_transition(transition_time_override=t_time)
         self._notify_listeners()
@@ -506,21 +636,29 @@ class ScheduledSceneProgram:
     async def async_turn_on(self, transition_time: float | None = None) -> None:
         """Turn on all program lights with current schedule parameters."""
         self._auto_disabled_by_lights_off = False
-        t_time = transition_time if transition_time is not None else self.transition_time_on
+        t_time = (
+            transition_time if transition_time is not None else self.transition_time_on
+        )
         self._record_command("turn on", {"transition": t_time})
         self.manual_brightness = None
+        self.manual_color_temp = None
         if self._unsub_override_timer:
             self._unsub_override_timer()
             self._unsub_override_timer = None
         self.set_enabled(True)
-        await self.async_transition(transition_time_override=t_time, allow_turn_lights_on=True)
+        await self.async_transition(
+            transition_time_override=t_time, allow_turn_lights_on=True
+        )
 
     async def async_turn_off(self, transition_time: float | None = None) -> None:
         """Turn off all lights in the program and disable the schedule."""
         self._auto_disabled_by_lights_off = False
-        t_time = transition_time if transition_time is not None else self.transition_time_on
+        t_time = (
+            transition_time if transition_time is not None else self.transition_time_on
+        )
         self._record_command("turn off", {"transition": t_time})
         self.manual_brightness = None
+        self.manual_color_temp = None
         if self._unsub_override_timer:
             self._unsub_override_timer()
             self._unsub_override_timer = None
@@ -533,7 +671,9 @@ class ScheduledSceneProgram:
             )
         self._notify_listeners()
 
-    def set_enabled(self, enabled: bool, duration: int = 0, auto_disabled: bool = False) -> None:
+    def set_enabled(
+        self, enabled: bool, duration: int = 0, auto_disabled: bool = False
+    ) -> None:
         """Enable or disable the program, with optional auto-enable timer."""
         if self._unsub_disable_timer:
             self._unsub_disable_timer()
@@ -543,17 +683,23 @@ class ScheduledSceneProgram:
 
         if enabled:
             self.manual_brightness = None
+            self.manual_color_temp = None
             if self._unsub_override_timer:
                 self._unsub_override_timer()
                 self._unsub_override_timer = None
-            self._record_command("enable", {"duration": duration} if duration > 0 else None)
+            self._record_command(
+                "enable", {"duration": duration} if duration > 0 else None
+            )
         else:
             if not auto_disabled:
-                self._record_command("disable", {"duration": duration} if duration > 0 else None)
+                self._record_command(
+                    "disable", {"duration": duration} if duration > 0 else None
+                )
 
         self.enabled = enabled
 
         if not enabled and duration > 0:
+
             @callback
             def _auto_enable(_now: datetime) -> None:
                 self.set_enabled(True)
