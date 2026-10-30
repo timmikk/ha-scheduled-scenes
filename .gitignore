@@ -9,3 +9,6 @@ build/
 dist/
 .coverage
 .coverage.*
+web/node_modules/
+web/dist/
+web/dev.log
