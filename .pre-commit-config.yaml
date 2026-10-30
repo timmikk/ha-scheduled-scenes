@@ -1,0 +1,30 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.0
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy (typecheck custom_components)
+        entry: .venv/bin/mypy custom_components
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      - id: vue-tsc
+        name: vue-tsc (Studio typecheck & build)
+        entry: pnpm --dir web run build
+        language: system
+        files: ^web/
+        pass_filenames: false
+
+      - id: todo-check
+        name: todo-check (task board consistency)
+        entry: node /home/timo/dev/dev-tools/scripts/todo-status.mjs --check
+        language: system
+        files: ^tasks/
+        pass_filenames: false

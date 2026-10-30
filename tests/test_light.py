@@ -1,7 +1,5 @@
 """Tests for the virtual light platform of scheduled_scenes."""
 
-from pytest_homeassistant_custom_component.common import MockConfigEntry
-
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
     ATTR_COLOR_TEMP_KELVIN,
@@ -9,6 +7,7 @@ from homeassistant.components.light import (
     ColorMode,
 )
 from homeassistant.core import HomeAssistant
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.scheduled_scenes import async_setup
 from custom_components.scheduled_scenes.const import (

@@ -172,3 +172,34 @@ def test_olohuone_light_specific_overrides():
     b_nauha2, k_nauha2 = calculate_light_state(t2, "light.olohuone_valonauha")
     assert b_nauha2 == 26
     assert k_nauha2 == 1650
+
+
+def test_shared_json_fixture_parity():
+    """Verify that calculations exactly match the shared cross-engine parity_cases.json fixture."""
+    import json
+    from pathlib import Path
+
+    fixture_path = Path(__file__).parent / "fixtures" / "parity_cases.json"
+    with open(fixture_path, encoding="utf-8") as f:
+        data = json.load(f)
+
+    for room_name, room_data in data["rooms"].items():
+        steps = parse_schedule(room_data["schedule"])
+        for eval_case in room_data["evaluations"]:
+            h = int(eval_case["time"].split(":")[0])
+            m = int(eval_case["time"].split(":")[1])
+            eval_dt = datetime(2026, 10, 27, h, m)
+
+            t = resolve_active_transition(steps, eval_dt)
+            assert t is not None, (
+                f"Transition failed for {room_name} at {eval_case['time']}"
+            )
+
+            b, k = calculate_light_state(t, eval_case["light"])
+            expected = eval_case["expected"]
+            assert b == expected["brightness"], (
+                f"{room_name} @ {eval_case['time']} brightness mismatch"
+            )
+            assert k == expected["temp"], (
+                f"{room_name} @ {eval_case['time']} temp mismatch"
+            )

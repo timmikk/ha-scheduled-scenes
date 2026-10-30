@@ -12,3 +12,5 @@ dist/
 web/node_modules/
 web/dist/
 web/dev.log
+web/test-results/
+web/playwright-report/

@@ -1,9 +1,9 @@
 """Tests for coordinator runtime, services, and entity interactions."""
 
-from pytest_homeassistant_custom_component.common import MockConfigEntry
-
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.scheduled_scenes import async_setup
 from custom_components.scheduled_scenes.const import (
@@ -689,4 +689,73 @@ async def test_device_registry_grouping(hass: HomeAssistant) -> None:
         assert reg_entry.device_id == device.id
 
     assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+
+async def test_coordinator_service_call_exception_handling(hass: HomeAssistant) -> None:
+    """Verify that exceptions in _async_call_service are caught and recorded."""
+
+    from homeassistant.exceptions import HomeAssistantError
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Error Room",
+        data={
+            CONF_NAME: "error_room",
+            CONF_LIGHTS: ["light.fail_light"],
+            CONF_SCHEDULE: [{"time": "08:00", "brightness": 100, "temp": 4000}],
+        },
+    )
+    entry.add_to_hass(hass)
+    hass.states.async_set("light.fail_light", "on")
+    await async_setup(hass, {})
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    program: ScheduledSceneProgram = hass.data[DOMAIN][entry.entry_id]
+
+    from unittest.mock import patch
+
+    with patch(
+        "homeassistant.core.ServiceRegistry.async_call",
+        side_effect=HomeAssistantError("Simulated failure"),
+    ):
+        await program._async_call_service(
+            "light", "turn_on", {"entity_id": "light.fail_light"}
+        )
+
+    assert program.error_count == 1
+    assert "Simulated failure" in str(program.last_error)
+    assert program.last_error_timestamp is not None
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+
+async def test_coordinator_adjust_brightness_zero_turns_off(
+    hass: HomeAssistant,
+) -> None:
+    """Verify that adjusting brightness to 0 invokes light.turn_off."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Zero Bri Room",
+        data={
+            CONF_NAME: "zero_bri_room",
+            CONF_LIGHTS: ["light.zb_light"],
+            CONF_SCHEDULE: [{"time": "08:00", "brightness": 100, "temp": 4000}],
+        },
+    )
+    entry.add_to_hass(hass)
+    hass.states.async_set("light.zb_light", "on")
+    await async_setup(hass, {})
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    program: ScheduledSceneProgram = hass.data[DOMAIN][entry.entry_id]
+
+    # Set brightness to 0
+    await program.async_adjust_brightness(brightness=0)
+    assert program.manual_brightness == 0
+    assert program.last_command == "set brightness"
+
+    await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()

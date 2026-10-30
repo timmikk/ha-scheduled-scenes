@@ -15,3 +15,20 @@ are read straight from the file. Entries are grouped by Category (fixed order fr
 
 ---
 
+## Features
+
+- [ ] **#18 dynamic sun timeline curve points** — Support dynamic timeline curve
+  points fixed to sun events and elevation angles with yearly variation
+  visualization, seasonal simulator scrubbing, and deterministic overlap
+  handling `tasks/18-feature-dynamic-sun-timeline-curve-points.md`
+  **Status:** pending | **Priority:** high | **Size:** L | **Mode:** auto | **Host:** all
+
+- [ ] **#7 ha sidebar panel** — Integrate web studio as Home Assistant sidebar
+  panel with WebSocket config read/write endpoints
+  `tasks/7-feature-ha-sidebar-panel.md`
+  **Status:** pending | **Priority:** medium | **Size:** L | **Mode:** auto | **Host:** all
+
+- [ ] **#15 multi curve brightness editor** — Allow viewing and editing multiple
+  room brightness distribution curves simultaneously with toggle visibility
+  selector `tasks/15-feature-multi-curve-brightness-editor.md`
+  **Status:** pending | **Priority:** medium | **Size:** M | **Mode:** auto | **Host:** all

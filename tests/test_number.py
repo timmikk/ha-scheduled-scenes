@@ -1,8 +1,7 @@
 """Tests for the number platform (brightness offset) of scheduled_scenes."""
 
-from pytest_homeassistant_custom_component.common import MockConfigEntry
-
 from homeassistant.core import HomeAssistant, ServiceCall
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.scheduled_scenes import async_setup
 from custom_components.scheduled_scenes.const import (

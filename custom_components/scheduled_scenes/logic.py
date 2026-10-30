@@ -6,9 +6,9 @@ This module contains zero Home Assistant runtime dependencies, enabling
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta
-import logging
 from typing import Any
 
 _LOGGER = logging.getLogger(__name__)

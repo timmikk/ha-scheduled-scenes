@@ -1,0 +1,130 @@
+{
+  "curves": {
+    "warm_glow": [
+      [1, 2000],
+      [50, 2700],
+      [100, 4000]
+    ]
+  },
+  "brightness_curves": {
+    "accent_strip": [
+      [0, 0],
+      [30, 0],
+      [50, 40],
+      [100, 100]
+    ]
+  },
+  "rooms": {
+    "tyohuone": {
+      "lights": ["light.valo_th_poyta"],
+      "schedule": [
+        { "time": "05:00", "brightness": 100, "temp": 2000 },
+        { "time": "07:00", "brightness": 100, "temp": 3000 },
+        { "time": "08:00", "brightness": 100, "temp": 4000 },
+        { "time": "14:00", "brightness": 100, "temp": 5000 },
+        { "time": "18:00", "brightness": 100, "temp": 4000 },
+        { "time": "23:00", "brightness": 100, "temp": 2000 }
+      ],
+      "evaluations": [
+        {
+          "time": "06:00",
+          "minute_of_day": 360,
+          "light": "light.valo_th_poyta",
+          "expected": { "brightness": 100, "temp": 2500 }
+        },
+        {
+          "time": "11:00",
+          "minute_of_day": 660,
+          "light": "light.valo_th_poyta",
+          "expected": { "brightness": 100, "temp": 4500 }
+        },
+        {
+          "time": "02:00",
+          "minute_of_day": 120,
+          "light": "light.valo_th_poyta",
+          "expected": { "brightness": 100, "temp": 2000 }
+        }
+      ]
+    },
+    "olohuone": {
+      "lights": [
+        "light.oh_katto_1",
+        "light.oh_katto_2",
+        "light.olohuone_valonauha",
+        "light.olohuone_vitriini"
+      ],
+      "schedule": [
+        { "time": "05:00", "brightness": 50, "temp": 2000 },
+        { "time": "07:00", "brightness": 60, "temp": 2800 },
+        { "time": "08:00", "brightness": 100, "temp": 4000 },
+        {
+          "time": "14:00",
+          "brightness": 100,
+          "temp": 5000,
+          "lights": {
+            "light.olohuone_valonauha": { "temp": 6000 },
+            "light.olohuone_vitriini": { "temp": 5000 }
+          }
+        },
+        {
+          "time": "17:00",
+          "brightness": 100,
+          "temp": 4000,
+          "lights": {
+            "light.olohuone_valonauha": { "temp": 3000 }
+          }
+        },
+        {
+          "time": "19:00",
+          "brightness": 100,
+          "temp": 3000,
+          "lights": {
+            "light.olohuone_valonauha": { "temp": 2700, "brightness": 60 }
+          }
+        },
+        {
+          "time": "20:00",
+          "brightness": 70,
+          "temp": 2500,
+          "lights": {
+            "light.olohuone_valonauha": { "temp": 2300, "brightness": 50 }
+          }
+        },
+        {
+          "time": "22:00",
+          "brightness": 40,
+          "temp": 2000,
+          "lights": {
+            "light.olohuone_valonauha": { "temp": 1000, "brightness": 1 }
+          }
+        }
+      ],
+      "evaluations": [
+        {
+          "time": "14:00",
+          "minute_of_day": 840,
+          "light": "light.oh_katto_1",
+          "expected": { "brightness": 100, "temp": 5000 }
+        },
+        {
+          "time": "14:00",
+          "minute_of_day": 840,
+          "light": "light.olohuone_valonauha",
+          "expected": { "brightness": 100, "temp": 6000 }
+        },
+        {
+          "time": "21:00",
+          "minute_of_day": 1260,
+          "light": "light.oh_katto_1",
+          "expected": { "brightness": 55, "temp": 2250 }
+        },
+        {
+          "time": "21:00",
+          "minute_of_day": 1260,
+          "light": "light.olohuone_valonauha",
+          "expected": { "brightness": 26, "temp": 1650 }
+        }
+      ]
+    }
+  }
+}

@@ -1,10 +1,9 @@
 """Tests for the scheduled_scenes config flow and options flow."""
 
-from pytest_homeassistant_custom_component.common import MockConfigEntry
-
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.scheduled_scenes.const import (
     CONF_ALLOW_TURN_ON_IF_ANY_ON,

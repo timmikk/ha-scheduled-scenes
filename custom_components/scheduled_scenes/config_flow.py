@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import logging
 from typing import Any
-import yaml
 
 import voluptuous as vol
-
+import yaml
 from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.helpers.selector import (

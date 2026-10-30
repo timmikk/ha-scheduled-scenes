@@ -44,6 +44,22 @@ jobs:
           category: integration
           ignore: brands
 
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test & lint dependencies
+        run: pip install -r requirements_test.txt
+      - name: Ruff check and format check
+        run: |
+          ruff check custom_components tests
+          ruff format --check custom_components tests
+      - name: Mypy type check
+        run: mypy custom_components
+
   pytest:
     runs-on: ubuntu-latest
     steps:
@@ -60,9 +76,39 @@ jobs:
           name: coverage-xml
           path: coverage.xml
 
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm --dir web install --frozen-lockfile
+      - name: TypeScript typecheck & Vite build
+        run: pnpm --dir web run build
+      - name: Unit & Component tests (Vitest)
+        run: pnpm --dir web run test:run
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('web/pnpm-lock.yaml') }}
+      - name: Install Playwright Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: pnpm --dir web exec playwright install chromium
+      - name: E2E Smoke tests (Playwright)
+        run: pnpm --dir web run test:e2e
+
   sonar:
     runs-on: ubuntu-latest
-    needs: [pytest]
+    needs: [pytest, web, lint]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4

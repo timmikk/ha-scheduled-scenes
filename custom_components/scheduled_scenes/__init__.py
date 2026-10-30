@@ -6,7 +6,6 @@ import logging
 from typing import Any
 
 import voluptuous as vol
-
 from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -131,11 +130,11 @@ CONFIG_SCHEMA = vol.Schema(
 
 def _resolve_programs_and_curves(
     domain_conf: Any,
-) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+) -> tuple[Any, list[dict[str, Any]]]:
     """Extract global curves and program configs from domain configuration."""
-    global_curves: dict[str, Any] = {}
-    global_b_curves: dict[str, Any] = {}
-    programs: list[dict[str, Any]] = []
+    global_curves: Any = {}
+    global_b_curves: Any = {}
+    programs: list[Any] = []
 
     if isinstance(domain_conf, list):
         programs = domain_conf
@@ -146,7 +145,9 @@ def _resolve_programs_and_curves(
         b_curves = domain_conf.get(CONF_BRIGHTNESS_CURVES)
         if isinstance(b_curves, (dict, list)):
             global_b_curves = b_curves
-        programs = domain_conf.get(CONF_PROGRAMS, domain_conf.get("rooms", []))
+        raw_progs = domain_conf.get(CONF_PROGRAMS, domain_conf.get("rooms", []))
+        if isinstance(raw_progs, list):
+            programs = raw_progs
 
     resolved_programs: list[dict[str, Any]] = []
     for prog_conf in programs:

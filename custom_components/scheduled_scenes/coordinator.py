@@ -2,18 +2,19 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from datetime import datetime, timedelta
-import logging
 from typing import Any
 
+import homeassistant.util.dt as dt_util
 from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
 from homeassistant.helpers.event import (
+    EventStateChangedData,
     async_call_later,
     async_track_state_change_event,
     async_track_time_interval,
 )
-import homeassistant.util.dt as dt_util
 
 from .const import (
     CONF_ALLOW_TURN_ON_IF_ANY_ON,
@@ -332,13 +333,16 @@ class ScheduledSceneProgram:
                 return True
         return False
 
-    async def _async_light_state_change(self, event: Event) -> None:
+    async def _async_light_state_change(
+        self, event: Event[EventStateChangedData]
+    ) -> None:
         """Handle light state change event."""
-        new_state = event.data.get("new_state")
+        data = event.data
+        new_state = data.get("new_state")
         if new_state is None:
             return
 
-        entity_id = event.data.get("entity_id", "")
+        entity_id = data.get("entity_id", "")
         val = new_state.state
         if val == "on":
             self._auto_disabled_by_lights_off = False
@@ -480,7 +484,8 @@ class ScheduledSceneProgram:
                         current_states, self.light_brightness_curves
                     )
 
-            target_b = max(0, min(100, baseline + int(step)))
+            step_val = step if step is not None else 10
+            target_b = max(0, min(100, baseline + step_val))
 
         self.manual_brightness = target_b
 
