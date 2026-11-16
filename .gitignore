@@ -6,7 +6,7 @@ __pycache__/
 .dev/
 *.egg-info/
 build/
-dist/
+/dist/
 .coverage
 .coverage.*
 web/node_modules/

@@ -1,9 +1,15 @@
 /// <reference types="vitest" />
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import tailwindcss from '@tailwindcss/vite'
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
+  base: mode === 'ha' ? '/scheduled_scenes_panel/' : '/',
+  build: mode === 'ha' ? {
+    outDir: fileURLToPath(new URL('../custom_components/scheduled_scenes/frontend/dist', import.meta.url)),
+    emptyOutDir: true,
+  } : undefined,
   plugins: [
     vue(),
     tailwindcss(),
@@ -23,4 +29,4 @@ export default defineConfig({
       ignored: ['**/node_modules/**', '**/.git/**', '**/dist/**', '**/.dev/**'],
     },
   },
-})
+}))

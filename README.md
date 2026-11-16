@@ -201,6 +201,20 @@ automation:
 3. Fill in the program name, select light entities from the dropdown, and paste or customize your YAML schedule (and optional curves).
 4. Future adjustments can be made anytime by clicking **Configure** on the integration card.
 
+### Scheduled Scenes Sidebar Studio
+
+The integration also provides an admin-only **Scheduled Scenes** sidebar panel
+when its bundled Studio frontend is installed. Open it from the Home Assistant
+sidebar to edit live light assignments, schedules, and shared curves. Use
+**Apply to Home Assistant** to validate and save the complete set of Studio
+programs; the integration reloads changed programs so the runtime immediately
+uses the new configuration. The panel reads Home Assistant light entities and
+area assignments from the active Home Assistant connection.
+
+For development or packaging, build the panel assets from `web/` with
+`pnpm build:ha`. The command outputs the HACS-distributed files to
+`custom_components/scheduled_scenes/frontend/dist/`.
+
 ## Development
 
 - Component code lives in `custom_components/scheduled_scenes/`.

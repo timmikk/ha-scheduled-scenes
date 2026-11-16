@@ -1,5 +1,8 @@
 <template>
   <div class="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
+    <div v-if="saveError || saveSuccess" role="status" class="fixed top-20 right-5 z-50 max-w-md rounded-lg border px-4 py-3 text-sm shadow-xl" :class="saveError ? 'border-rose-700 bg-rose-950 text-rose-200' : 'border-emerald-700 bg-emerald-950 text-emerald-200'">
+      {{ saveError || 'Configuration applied to Home Assistant.' }}
+    </div>
     <!-- Top Navigation Bar -->
     <header class="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-40 px-6 py-3.5 flex items-center justify-between flex-wrap gap-4">
       <div class="flex items-center gap-3">
@@ -90,9 +93,12 @@
           <span>LIVE: {{ liveMode === 'room' ? 'Room Sync' : 'DTW Calibration' }}</span>
         </div>
 
+        <button v-if="haConnected" @click="applyToHomeAssistant" :disabled="saving" class="text-xs px-3 py-1.5 rounded-lg font-semibold transition cursor-pointer disabled:opacity-60" :class="saveError ? 'bg-rose-700 text-white' : saveSuccess ? 'bg-emerald-700 text-white' : 'bg-indigo-600 hover:bg-indigo-500 text-white'">
+          {{ saving ? 'Applying…' : saveError || (saveSuccess ? 'Applied to Home Assistant' : 'Apply to Home Assistant') }}
+        </button>
         <div class="flex items-center gap-1.5 text-xs bg-emerald-950/60 border border-emerald-800/60 text-emerald-300 px-2.5 py-1 rounded-full font-mono">
           <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-          <span>Mock Data Active</span>
+          <span>{{ haConnected ? 'Home Assistant' : 'Standalone Demo' }}</span>
         </div>
         <div class="text-[11px] font-mono text-slate-500 hidden sm:block">
           ahjo:5173
@@ -238,6 +244,7 @@ import { INITIAL_CONFIG } from './mock/data'
 import { entityService } from './services/entityService'
 import { interpolateSchedule, calculateFixtureOutput } from './utils/interpolator'
 import { liveOutputService } from './services/liveOutputService'
+import { haBridge } from './services/haBridge'
 import CircadianTimeline from './components/CircadianTimeline.vue'
 import ScrubSimulator from './components/ScrubSimulator.vue'
 import CurveEditor from './components/CurveEditor.vue'
@@ -250,6 +257,33 @@ const activeView = ref<'room' | 'dim_to_warm'>('room')
 const activeProgramIdx = ref(0)
 const contextualLightId = ref<string | null>(null)
 const liveMode = ref<LiveModeType>('off')
+const haConnected = ref(haBridge.isConnected())
+const saving = ref(false)
+const saveSuccess = ref(false)
+const saveError = ref('')
+
+async function applyToHomeAssistant() {
+  saving.value = true
+  saveSuccess.value = false
+  saveError.value = ''
+  try {
+    await haBridge.saveConfig(config.value)
+    saveSuccess.value = true
+    window.setTimeout(() => { saveSuccess.value = false }, 4000)
+  } catch (error) {
+    saveError.value = error instanceof Error ? error.message : 'Unable to apply configuration'
+    window.setTimeout(() => { saveError.value = '' }, 6000)
+  } finally {
+    saving.value = false
+  }
+}
+
+if (haConnected.value) {
+  entityService.refreshFromHomeAssistant()
+  void haBridge.loadConfig().then((saved) => { config.value = saved }).catch((error: unknown) => {
+    saveError.value = error instanceof Error ? error.message : 'Unable to load configuration'
+  })
+}
 
 const allLights = computed(() => entityService.getAllLights())
 

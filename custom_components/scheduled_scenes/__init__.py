@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 import voluptuous as vol
+from homeassistant.components import frontend
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.reload import async_integration_yaml_config
+from homeassistant.helpers.storage import Store
 
 from .const import (
     ATTR_BRIGHTNESS,
@@ -51,6 +55,7 @@ from .const import (
     SERVICE_TURN_ON,
 )
 from .coordinator import ScheduledSceneProgram
+from .websocket import async_register_websocket_commands
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -177,8 +182,30 @@ def _resolve_programs_and_curves(
 async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     """Set up scheduled_scenes from YAML."""
     hass.data.setdefault(DOMAIN, {})
+    studio_store: Store[dict[str, Any]] = Store(hass, 1, f"{DOMAIN}_studio_config")
+    stored_studio_config = await studio_store.async_load() or {}
+    hass.data[DOMAIN]["_studio_store"] = studio_store
+    hass.data[DOMAIN]["_studio_curves"] = {
+        CONF_CURVES: stored_studio_config.get(CONF_CURVES, {}),
+        CONF_BRIGHTNESS_CURVES: stored_studio_config.get(CONF_BRIGHTNESS_CURVES, {}),
+    }
 
     _register_services(hass)
+    async_register_websocket_commands(hass)
+    frontend_dir = Path(__file__).parent / "frontend" / "dist"
+    if (frontend_dir / "index.html").is_file() and hass.http is not None:
+        await hass.http.async_register_static_paths(
+            [StaticPathConfig("/scheduled_scenes_panel", str(frontend_dir), True)]
+        )
+        frontend.async_register_built_in_panel(
+            hass,
+            "iframe",
+            "Scheduled Scenes",
+            "mdi:weather-sunset",
+            config={"url": "/scheduled_scenes_panel/index.html"},
+            require_admin=True,
+            frontend_url_path="scheduled-scenes",
+        )
 
     if DOMAIN in config:
         _, programs = _resolve_programs_and_curves(config[DOMAIN])
