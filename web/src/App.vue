@@ -178,7 +178,11 @@
         <!-- 1. Interactive 24-Hour Circadian Timeline -->
         <CircadianTimeline
           :steps="currentProgram.schedule"
+          :simulation-date="seasonDate"
+          :resolved-steps="currentResolvedSchedule"
           :scrub-minutes="scrubMinutes"
+          :latitude="simulationLatitude"
+          :longitude="simulationLongitude"
           @update:steps="currentProgram.schedule = $event"
         />
 
@@ -192,6 +196,9 @@
           :brightness-curves="config.brightness_curves"
           :dim-to-warm-curves="config.curves"
           :live-mode="liveMode"
+          v-model:season-date="seasonDate"
+          v-model:latitude="simulationLatitude"
+          v-model:longitude="simulationLongitude"
           @toggle-live-room="toggleLiveRoom"
           @open-light-dtw="openContextualDtw"
         />
@@ -242,7 +249,7 @@ import { ref, computed, watch } from 'vue'
 import type { LiveModeType, ScheduledScenesConfig } from './types'
 import { INITIAL_CONFIG } from './mock/data'
 import { entityService } from './services/entityService'
-import { interpolateSchedule, calculateFixtureOutput } from './utils/interpolator'
+import { interpolateSchedule, calculateFixtureOutput, resolveDynamicSchedule } from './utils/interpolator'
 import { liveOutputService } from './services/liveOutputService'
 import { haBridge } from './services/haBridge'
 import CircadianTimeline from './components/CircadianTimeline.vue'
@@ -330,16 +337,24 @@ async function toggleLiveDtw() {
 // Scrub Simulator State
 const scrubMinutes = ref(840) // 14:00 by default
 const liveRoomBrightness = ref(70)
+const seasonDate = ref(new Date().toISOString().slice(0, 10))
+const simulationLatitude = ref(0)
+const simulationLongitude = ref(0)
+
+const currentResolvedSchedule = computed(() => {
+  if (!currentProgram.value) return []
+  return resolveDynamicSchedule(currentProgram.value.schedule, new Date(`${seasonDate.value}T12:00:00`), simulationLatitude.value, simulationLongitude.value)
+})
 
 const currentInterp = computed(() => {
   if (!currentProgram.value) return { brightness: 50, temp: 2700 }
-  return interpolateSchedule(currentProgram.value.schedule, scrubMinutes.value)
+  return interpolateSchedule(currentResolvedSchedule.value, scrubMinutes.value)
 })
 
 const currentInterpTemp = computed(() => currentInterp.value.temp)
 
 // When scrubbing time, track schedule brightness automatically unless manually adjusted
-watch(scrubMinutes, () => {
+watch(currentInterp, () => {
   liveRoomBrightness.value = currentInterp.value.brightness
 })
 

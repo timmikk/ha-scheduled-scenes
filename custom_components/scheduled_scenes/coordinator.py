@@ -53,6 +53,7 @@ from .logic import (
     parse_dim_to_warm_curves,
     parse_schedule,
     resolve_active_transition,
+    resolve_dynamic_schedule,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -113,6 +114,8 @@ class ScheduledSceneProgram:
         self.schedule: list[ScheduleStep] = parse_schedule(
             config.get(CONF_SCHEDULE, [])
         )
+        self.latitude = getattr(hass.config, "latitude", None)
+        self.longitude = getattr(hass.config, "longitude", None)
 
         self.enabled: bool = True
         self.manual_brightness: int | None = None
@@ -148,6 +151,25 @@ class ScheduledSceneProgram:
         """Notify registered entity listeners."""
         for update_callback in self._listeners:
             update_callback()
+
+    def _schedule_for(self, now: datetime) -> list[ScheduleStep]:
+        """Resolve solar points for the current local date; static schedules pass through."""
+        if (
+            self.latitude is None
+            or self.longitude is None
+            or not any(step.dynamic for step in self.schedule)
+        ):
+            return self.schedule
+        try:
+            return resolve_dynamic_schedule(
+                self.schedule, now, float(self.latitude), float(self.longitude)
+            )
+        except (TypeError, ValueError):
+            _LOGGER.warning(
+                "Program [%s] has invalid solar coordinates; using configured point times",
+                self.name,
+            )
+            return self.schedule
 
     def _record_command(
         self, command: str, details: dict[str, Any] | None = None
@@ -282,7 +304,9 @@ class ScheduledSceneProgram:
     async def async_start(self) -> None:
         """Start listening to state changes and periodic interval timers."""
         now = dt_util.now()
-        self.current_transition = resolve_active_transition(self.schedule, now)
+        self.current_transition = resolve_active_transition(
+            self._schedule_for(now), now
+        )
 
         self._unsub_interval = async_track_time_interval(
             self.hass,
@@ -394,7 +418,7 @@ class ScheduledSceneProgram:
             return
 
         now = dt_util.now()
-        transition = resolve_active_transition(self.schedule, now)
+        transition = resolve_active_transition(self._schedule_for(now), now)
         if transition is None:
             return
 
@@ -537,7 +561,7 @@ class ScheduledSceneProgram:
         else:
             now = dt_util.now()
             sched_transition = self.current_transition or resolve_active_transition(
-                self.schedule, now
+                self._schedule_for(now), now
             )
             for light_id in self.lights:
                 if sched_transition:

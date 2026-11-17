@@ -69,6 +69,7 @@ export function serializeScheduleYaml(steps: ScheduleStep[]): string {
     if (s.lights && Object.keys(s.lights).length > 0) {
       item.lights = s.lights
     }
+    if (s.dynamic) item.dynamic = s.dynamic
     return item
   })
 
@@ -162,7 +163,10 @@ export function parseScheduleYaml(yamlStr: string): ParsedScheduleResult {
       }
     }
 
-    const normTime = normalizeTime(item.time)
+    const dynamic = item.dynamic && typeof item.dynamic === 'object' && ['sun', 'sensor'].includes(item.dynamic.type)
+      ? item.dynamic as ScheduleStep['dynamic']
+      : undefined
+    const normTime = normalizeTime(item.time ?? (dynamic ? '00:00' : undefined))
     if (!normTime) {
       return {
         success: false,
@@ -196,20 +200,23 @@ export function parseScheduleYaml(yamlStr: string): ParsedScheduleResult {
       brightness: Math.round(b),
       temp,
       lights: item.lights && typeof item.lights === 'object' ? item.lights : undefined,
+      dynamic,
     })
   }
 
   // Sort chronologically
   validatedSteps.sort((a, b) => timeToMinutes(a.time) - timeToMinutes(b.time))
 
-  // Ensure times are distinct
-  for (let i = 1; i < validatedSteps.length; i++) {
-    if (validatedSteps[i].time === validatedSteps[i - 1].time) {
+  // Fixed checkpoints must have distinct times; dynamic points may share fallback times.
+  const fixedTimes = new Set<string>()
+  for (const step of validatedSteps) {
+    if (!step.dynamic && fixedTimes.has(step.time)) {
       return {
         success: false,
-        error: `Duplicate checkpoint time '${validatedSteps[i].time}' found. Each checkpoint must have a distinct time.`,
+        error: `Duplicate checkpoint time '${step.time}' found. Each fixed checkpoint must have a distinct time.`,
       }
     }
+    if (!step.dynamic) fixedTimes.add(step.time)
   }
 
   return { success: true, data: validatedSteps }

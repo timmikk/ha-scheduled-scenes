@@ -9,6 +9,24 @@ export interface ScheduleStep {
   brightness: number // 0-100
   temp?: number // Kelvin e.g. 2700
   lights?: Record<string, LightOverride>
+  dynamic?: DynamicPointConfig
+}
+
+export interface ResolvedScheduleStep extends ScheduleStep {
+  resolvedMinuteOfDay: number
+}
+
+export type DynamicPointSourceType = 'sun' | 'sensor'
+export type SunEvent = 'sunrise' | 'sunset' | 'solar_noon' | 'solar_midnight' | 'dawn' | 'dusk' | 'elevation'
+export type OffsetUnit = 'time' | 'angle'
+export interface DynamicPointConfig {
+  type: DynamicPointSourceType
+  event?: SunEvent
+  elevation?: number
+  direction?: 'rising' | 'setting' | 'any'
+  offset_value?: number
+  offset_unit?: OffsetUnit
+  overlap_priority?: number
 }
 
 export interface DimToWarmCurve {

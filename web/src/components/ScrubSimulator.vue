@@ -237,6 +237,15 @@
         </div>
       </div>
     </div>
+    <div class="flex flex-wrap items-center gap-3 bg-slate-950/70 border border-slate-800 rounded-lg p-3 text-xs">
+      <label class="font-semibold text-slate-300" for="season-date">Simulate time of year:</label>
+      <input id="season-date" type="date" :value="currentSeasonDate" @input="$emit('update:seasonDate', ($event.target as HTMLInputElement).value)" class="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200" />
+      <input aria-label="Day of year" type="range" min="1" max="365" :value="dayOfYear" @input="setDayOfYear(Number(($event.target as HTMLInputElement).value))" class="accent-emerald-500" />
+      <span class="font-mono text-emerald-300">{{ seasonDateLabel }} · day {{ dayOfYear }}/365</span>
+      <label class="text-slate-400">Lat <input type="number" min="-90" max="90" step="0.01" :value="latitude" @input="$emit('update:latitude', Number(($event.target as HTMLInputElement).value))" class="w-20 bg-slate-900 border border-slate-700 rounded px-1 py-1 text-slate-200" /></label>
+      <label class="text-slate-400">Lon <input type="number" min="-180" max="180" step="0.01" :value="longitude" @input="$emit('update:longitude', Number(($event.target as HTMLInputElement).value))" class="w-20 bg-slate-900 border border-slate-700 rounded px-1 py-1 text-slate-200" /></label>
+      <button v-for="preset in seasonPresets" :key="preset.label" @click="$emit('update:seasonDate', preset.date)" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-slate-300">{{ preset.label }}</button>
+    </div>
   </div>
 </template>
 
@@ -259,6 +268,9 @@ const props = defineProps<{
   brightnessCurves: Record<string, BrightnessCurve>
   dimToWarmCurves: Record<string, DimToWarmCurve>
   liveMode: LiveModeType
+  seasonDate?: string
+  latitude?: number
+  longitude?: number
 }>()
 
 const emit = defineEmits<{
@@ -266,7 +278,19 @@ const emit = defineEmits<{
   (e: 'update:roomBrightness', value: number): void
   (e: 'toggleLiveRoom'): void
   (e: 'openLightDtw', lightId: string): void
+  (e: 'update:seasonDate', value: string): void
+  (e: 'update:latitude', value: number): void
+  (e: 'update:longitude', value: number): void
 }>()
+
+const currentSeasonDate = computed(() => props.seasonDate || new Date().toISOString().slice(0, 10))
+const dayOfYear = computed(() => Math.floor((new Date(`${currentSeasonDate.value}T00:00:00`).getTime() - new Date(`${currentSeasonDate.value.slice(0,4)}-01-01T00:00:00`).getTime()) / 86400000) + 1)
+const seasonDateLabel = computed(() => new Date(`${currentSeasonDate.value}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }))
+const seasonPresets = computed(() => {
+  const year=Number(currentSeasonDate.value.slice(0,4)) || new Date().getFullYear()
+  return [{label:'Spring Equinox',date:`${year}-03-20`},{label:'Summer Solstice',date:`${year}-06-21`},{label:'Autumn Equinox',date:`${year}-09-22`},{label:'Winter Solstice',date:`${year}-12-21`},{label:'Today',date:new Date().toISOString().slice(0,10)}]
+})
+function setDayOfYear(day:number) { const year=Number(currentSeasonDate.value.slice(0,4)) || new Date().getFullYear(); const date=new Date(year,0,day); emit('update:seasonDate',`${year}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`) }
 
 const formattedTime = computed(() => minutesToTime(props.modelValue))
 const lastCommandLog = computed(() => liveOutputService.lastCommandLog.value)

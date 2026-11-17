@@ -30,6 +30,21 @@ describe('CircadianTimeline.vue', () => {
     expect(importBtn?.exists()).toBe(true)
   })
 
+  it('switches a checkpoint to a dynamic sun point and updates its event definition', async () => {
+    const steps = initialSteps.map(step => ({ ...step }))
+    const wrapper = mount(CircadianTimeline, { props: { steps, scrubMinutes: 720, simulationDate: '2024-06-21', latitude: 60, longitude: 25 } })
+    const pointType = wrapper.find('select')
+    await pointType.setValue('dynamic')
+    expect(wrapper.emitted('update:steps')).toBeTruthy()
+    expect(steps[0].dynamic).toMatchObject({ type: 'sun', event: 'sunrise' })
+
+    const eventSelect = wrapper.findAll('select')[2]
+    await eventSelect.setValue('sunset')
+    expect(steps[0].dynamic?.event).toBe('sunset')
+    expect(wrapper.text()).toContain('Resolved')
+    expect(wrapper.find('svg circle[stroke="#fbbf24"]').exists()).toBe(true)
+  })
+
   it('copies schedule YAML to clipboard on copy click', async () => {
     const writeTextMock = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', {

@@ -1,4 +1,29 @@
-import type { ScheduleStep, BrightnessCurve, DimToWarmCurve } from '../types'
+import type { ScheduleStep, ResolvedScheduleStep, BrightnessCurve, DimToWarmCurve } from '../types'
+import { resolveSunPoint } from './solar'
+
+export function resolveDynamicSchedule(steps: ScheduleStep[], date: Date, latitude: number, longitude: number): ResolvedScheduleStep[] {
+  const candidates = steps.map((step, index) => {
+    const [h,m] = step.time.split(':').map(Number)
+    const resolved = step.dynamic?.type === 'sun' ? resolveSunPoint(step.dynamic, date, latitude, longitude) : null
+    const localResolved = resolved === null ? null : ((resolved - date.getTimezoneOffset()) % 1440 + 1440) % 1440
+    return { step: localResolved === null ? step : { ...step, time: minutesToTime(localResolved) }, minute: localResolved ?? ((h || 0)*60+(m || 0)), index }
+  }).sort((a,b) => a.minute-b.minute || (b.step.dynamic?.overlap_priority ?? 0)-(a.step.dynamic?.overlap_priority ?? 0) || Number(!!b.step.dynamic)-Number(!!a.step.dynamic) || a.index-b.index)
+  const kept: typeof candidates = []
+  for (const candidate of candidates) {
+    const collisions = kept.filter(item => Math.min(Math.abs(item.minute-candidate.minute), 1440-Math.abs(item.minute-candidate.minute))<=1)
+    if (collisions.length === 0) kept.push(candidate)
+    else {
+      const score=(x: typeof candidate) => [x.step.dynamic?.overlap_priority ?? 0, Number(!!x.step.dynamic), -x.index]
+      const winner=[...collisions,candidate].sort((a,b)=>{
+        const left=score(a), right=score(b)
+        return right[0]-left[0] || right[1]-left[1] || right[2]-left[2]
+      })[0]
+      for (const collision of collisions) kept.splice(kept.indexOf(collision),1)
+      kept.push(winner)
+    }
+  }
+  return kept.sort((a,b)=>a.minute-b.minute).map(x=>({ ...x.step, time: minutesToTime(x.minute), resolvedMinuteOfDay: x.minute }))
+}
 
 export function timeToMinutes(timeStr: string): number {
   const [h, m] = timeStr.split(':').map((s) => parseInt(s, 10))

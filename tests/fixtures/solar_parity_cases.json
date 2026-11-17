@@ -1,0 +1,46 @@
+[
+  {
+    "date": "2024-03-20",
+    "latitude": 51.5,
+    "longitude": 0.0,
+    "declination": -0.06592403700579934,
+    "equation_of_time": -7.85809312202718,
+    "solar_noon": 727.8580931220272,
+    "rise_crossing": 362.83690349347637,
+    "set_crossing": 1092.879282750578,
+    "sunrise_angle_offset": 395
+  },
+  {
+    "date": "2024-06-21",
+    "latitude": 60.17,
+    "longitude": 24.94,
+    "declination": 23.455568693844302,
+    "equation_of_time": -1.5474298676845863,
+    "solar_noon": 621.7874298676846,
+    "rise_crossing": 53.584445004420445,
+    "set_crossing": 1189.990414730949,
+    "sunrise_angle_offset": 115
+  },
+  {
+    "date": "2024-12-21",
+    "latitude": 89.0,
+    "longitude": 0.0,
+    "declination": -23.42603903507511,
+    "equation_of_time": 1.705117918368007,
+    "solar_noon": 718.294882081632,
+    "rise_crossing": null,
+    "set_crossing": null,
+    "sunrise_angle_offset": null
+  },
+  {
+    "date": "2024-02-29",
+    "latitude": -33.87,
+    "longitude": 151.21,
+    "declination": -7.879351793739763,
+    "equation_of_time": -12.902731739750145,
+    "solar_noon": 128.06273173975012,
+    "rise_crossing": -257.3295283241989,
+    "set_crossing": 513.4549918036992,
+    "sunrise_angle_offset": 1207
+  }
+]

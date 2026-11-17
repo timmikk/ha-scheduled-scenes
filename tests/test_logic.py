@@ -1,6 +1,6 @@
 """Unit tests for the pure logic engine (custom_components/scheduled_scenes/logic.py)."""
 
-from datetime import datetime, time
+from datetime import UTC, datetime, time
 
 from custom_components.scheduled_scenes.logic import (
     DEFAULT_COLOR_TEMP,
@@ -25,7 +25,77 @@ from custom_components.scheduled_scenes.logic import (
     parse_schedule_step,
     parse_time,
     resolve_active_transition,
+    resolve_dynamic_schedule,
 )
+from custom_components.scheduled_scenes.solar import resolve_sun_point
+
+
+def test_dynamic_schedule_deduplicates_collisions_in_favor_of_dynamic_point():
+    day = datetime(2024, 6, 21, tzinfo=UTC)
+    dynamic = ScheduleStep(
+        time=time(12), brightness=80, dynamic={"type": "sun", "event": "solar_noon"}
+    )
+    minute = resolve_sun_point(dynamic.dynamic, day, 0, 0)
+    assert minute is not None
+    static = ScheduleStep(time=time(minute // 60, minute % 60), brightness=20)
+    result = resolve_dynamic_schedule([static, dynamic], day, 0, 0)
+    assert len(result) == 1
+    assert result[0].dynamic == dynamic.dynamic
+
+
+def test_dynamic_sunset_is_sorted_across_static_checkpoint():
+    day = datetime(2024, 12, 21, tzinfo=UTC)
+    steps = [
+        ScheduleStep(time=time(16), brightness=20),
+        ScheduleStep(
+            time=time(8), brightness=80, dynamic={"type": "sun", "event": "sunset"}
+        ),
+    ]
+    resolved = resolve_dynamic_schedule(steps, day, 60.17, 24.94)
+    assert [step.time for step in resolved] == sorted(step.time for step in resolved)
+    assert resolved[0].time.hour < 16
+
+
+def test_dynamic_priority_wins_collision_and_circular_midnight_collision():
+    day = datetime(2024, 6, 21, tzinfo=UTC)
+    dynamic = ScheduleStep(
+        time=time(12),
+        brightness=80,
+        dynamic={"type": "sun", "event": "solar_noon", "overlap_priority": 1},
+    )
+    minute = resolve_sun_point(dynamic.dynamic, day, 0, 0)
+    assert minute is not None
+    static = ScheduleStep(
+        time=time(minute // 60, minute % 60), brightness=20, overlap_priority=0
+    )
+    assert (
+        resolve_dynamic_schedule([static, dynamic], day, 0, 0)[0].dynamic
+        == dynamic.dynamic
+    )
+    adjacent_dynamic = ScheduleStep(
+        time=time(12),
+        brightness=90,
+        dynamic={
+            "type": "sun",
+            "event": "solar_noon",
+            "offset_value": 1,
+            "overlap_priority": 4,
+        },
+    )
+    assert (
+        resolve_dynamic_schedule([dynamic, adjacent_dynamic], day, 0, 0)[0].dynamic
+        == adjacent_dynamic.dynamic
+    )
+    midnight = resolve_dynamic_schedule(
+        [
+            ScheduleStep(time=time(23, 59), brightness=10),
+            ScheduleStep(time=time(0), brightness=90, dynamic={"type": "sensor"}),
+        ],
+        day,
+        0,
+        0,
+    )
+    assert len(midnight) == 1 and midnight[0].dynamic is not None
 
 
 def test_parse_time():

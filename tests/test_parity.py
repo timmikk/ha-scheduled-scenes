@@ -203,3 +203,49 @@ def test_shared_json_fixture_parity():
             assert k == expected["temp"], (
                 f"{room_name} @ {eval_case['time']} temp mismatch"
             )
+
+
+def test_shared_solar_golden_cases_match_typescript_fixture():
+    """Compare Python solar values with the shared TS/Python golden fixtures."""
+    import json
+    from datetime import date
+    from pathlib import Path
+
+    from custom_components.scheduled_scenes.solar import (
+        elevation_crossing,
+        resolve_sun_point,
+        solar_noon,
+        solar_position,
+    )
+
+    fixture = Path(__file__).parent / "fixtures" / "solar_parity_cases.json"
+    cases = json.loads(fixture.read_text(encoding="utf-8"))
+    for case in cases:
+        day = date.fromisoformat(case["date"])
+        declination, equation = solar_position(day, case["latitude"], case["longitude"])
+        assert abs(declination - case["declination"]) < 1e-9
+        assert abs(equation - case["equation_of_time"]) < 1e-9
+        assert abs(solar_noon(day, case["longitude"]) - case["solar_noon"]) < 1e-9
+        rising = elevation_crossing(
+            day, case["latitude"], case["longitude"], -0.833, "rising"
+        )
+        setting = elevation_crossing(
+            day, case["latitude"], case["longitude"], -0.833, "setting"
+        )
+        if case["rise_crossing"] is None:
+            assert rising is None and setting is None
+        else:
+            assert rising is not None and abs(rising - case["rise_crossing"]) < 1e-9
+            assert setting is not None and abs(setting - case["set_crossing"]) < 1e-9
+        actual_offset = resolve_sun_point(
+            {
+                "type": "sun",
+                "event": "sunrise",
+                "offset_unit": "angle",
+                "offset_value": 5,
+            },
+            day,
+            case["latitude"],
+            case["longitude"],
+        )
+        assert actual_offset == case["sunrise_angle_offset"]
