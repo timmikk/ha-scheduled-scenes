@@ -27,8 +27,3 @@ are read straight from the file. Entries are grouped by Category (fixed order fr
   panel with WebSocket config read/write endpoints
   `tasks/7-feature-ha-sidebar-panel.md`
   **Status:** pending | **Priority:** medium | **Size:** L | **Mode:** auto | **Host:** all
-
-- [ ] **#15 multi curve brightness editor** — Allow viewing and editing multiple
-  room brightness distribution curves simultaneously with toggle visibility
-  selector `tasks/15-feature-multi-curve-brightness-editor.md`
-  **Status:** pending | **Priority:** medium | **Size:** M | **Mode:** auto | **Host:** all

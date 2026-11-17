@@ -1,7 +1,7 @@
 # Task: multi curve brightness editor
 
 **Task:** #15
-**Status:** pending
+**Status:** done
 **Type:** feature
 **Complexity:** medium
 **Mode:** auto
@@ -10,7 +10,7 @@
 **Summary:** Allow viewing and editing multiple room brightness distribution curves simultaneously with toggle visibility selector
 **Host:** all
 **Created:** 2026-10-30
-**Completed:** —
+**Completed:** 2026-11-16
 
 ## Context
 
@@ -27,33 +27,33 @@ This task enhances `CurveEditor.vue` to support:
 
 ## Affected hosts
 
-- `all` — Frontend studio files in `web/src/` (`components/CurveEditor.vue`, `components/CurveEditor.test.ts`, and optionally `App.vue`).
+- `all` — Frontend studio files in `web/src/` (`components/CurveEditor.vue`, `components/CurveEditor.test.ts`, `types.ts`, `utils/color.ts`, `utils/svg.ts`, `App.vue`).
 
 ---
 
 ## Work items
 
 ### 1. Multi-Curve State & Color Palette Management
-**Files:** `web/src/components/CurveEditor.vue`, `web/src/types.ts`
+**Files:** `web/src/components/CurveEditor.vue`, `web/src/types.ts`, `web/src/utils/color.ts`
 
-- [ ] (auto) Define a distinct color palette constant (e.g., 8 accessible colors with stroke & gradient values) and a deterministic color resolver function for curve names.
-- [ ] (auto) Implement reactive multi-selection state:
+- [x] (auto) Define a distinct color palette constant (e.g., 8 accessible colors with stroke & gradient values) and a deterministic color resolver function for curve names.
+- [x] (auto) Implement reactive multi-selection state:
   - `visibleCurveNames`: `Set<string>` or `string[]` of curves currently displayed on canvas (defaults to all room-associated curves, or all curves).
   - `activeCurveName`: `ref<string>` tracking the currently focused curve for editing points and fixture attachments.
-- [ ] (auto) Ensure reactive synchronization when `brightnessCurves` prop changes (clean up deleted curves, auto-select if empty).
+- [x] (auto) Ensure reactive synchronization when `brightnessCurves` prop changes (clean up deleted curves, auto-select if empty).
 
 ### 2. Multi-Curve Toggle Selector & Toolbar
 **Files:** `web/src/components/CurveEditor.vue`
 
-- [ ] (auto) Replace the single `<select>` dropdown in the header with a curve toggle bar:
+- [x] (auto) Replace the single `<select>` dropdown in the header with a curve toggle bar:
   - Curve chips with color indicators, curve name, fixture count badge, visibility checkbox/eye toggle, and active focus badge.
   - Clicking a chip's visibility toggle shows/hides the curve on the canvas.
   - Clicking a chip selects that curve as the active editing target.
-- [ ] (auto) Add quick toggle controls:
+- [x] (auto) Add quick toggle controls:
   - "All": Toggle all curves visible.
   - "None": Hide all curves except the active one.
   - "Room Fixtures": Filter/toggle curves assigned to lights in `roomLights`.
-- [ ] (auto) Curve actions toolbar:
+- [x] (auto) Curve actions toolbar:
   - `+ New Curve`: Modal/prompt to create a curve with default control points.
   - Duplicate active curve button.
   - Delete active curve button (with confirmation if assigned to room lights).
@@ -61,31 +61,46 @@ This task enhances `CurveEditor.vue` to support:
 ### 3. Multi-Curve SVG Coordinate Canvas
 **Files:** `web/src/components/CurveEditor.vue`, `web/src/utils/svg.ts`
 
-- [ ] (auto) Generate dynamic SVG gradient definitions in `<defs>` for each visible curve color.
-- [ ] (auto) Render paths for all visible curves:
+- [x] (auto) Generate dynamic SVG gradient definitions in `<defs>` for each visible curve color.
+- [x] (auto) Render paths for all visible curves:
   - Active curve: primary color, bold stroke (`stroke-width="3"`), shaded area gradient fill, interactive draggable control points.
   - Inactive visible curves: secondary opacity (`stroke-width="2"`, opacity ~0.7), clickable line and points with hover tooltip.
-- [ ] (auto) Direct canvas interactions:
+- [x] (auto) Direct canvas interactions:
   - Clicking an inactive curve line or point on the canvas switches `activeCurveName` to that curve for immediate editing.
   - Dragging control points on the active curve updates `[x, y]` coordinates in real time and emits `update:previewRoomBrightness`.
   - Clicking empty canvas space adds a point to the active curve.
   - Double-clicking a point on the active curve deletes it (preserving minimum 2 points).
-- [ ] (auto) Add vertical room brightness cursor line (if `previewRoomBrightness` or `roomBrightness` is active) indicating fixture output % across all visible curves.
+- [x] (auto) Add vertical room brightness cursor line (if `previewRoomBrightness` or `roomBrightness` is active) indicating fixture output % across all visible curves.
 
 ### 4. Active Curve Details & Fine Tuning Panel
 **Files:** `web/src/components/CurveEditor.vue`
 
-- [ ] (auto) Render active curve summary header matching the curve's assigned theme color.
-- [ ] (auto) Assigned room lights badge list with remove (`×`) and `+ Attach Room Light` menu (filtered to unassigned fixtures from `props.roomLights`).
-- [ ] (auto) Points fine-tuning list with numeric step inputs for `Room %` and `Fixture %`.
-- [ ] (auto) Support switching active curve directly from the panel or canvas.
+- [x] (auto) Render active curve summary header matching the curve's assigned theme color.
+- [x] (auto) Assigned room lights badge list with remove (`×`) and `+ Attach Room Light` menu (filtered to unassigned fixtures from `props.roomLights`).
+- [x] (auto) Points fine-tuning list with numeric step inputs for `Room %` and `Fixture %`.
+- [x] (auto) Support switching active curve directly from the panel or canvas.
 
 ### 5. Automated Unit & Integration Tests
-**Files:** `web/src/components/CurveEditor.test.ts`
+**Files:** `web/src/components/CurveEditor.test.ts`, `web/src/utils/color.test.ts`, `web/src/utils/svg.test.ts`
 
-- [ ] (auto) Test multi-curve rendering: verifies multiple curve paths are rendered when multiple curves are visible.
-- [ ] (auto) Test visibility toggle: verifies toggling curve visibility removes/adds its path from the SVG DOM.
-- [ ] (auto) Test active curve switching: verifies clicking a curve chip or inactive canvas curve updates the active editing curve and control points.
-- [ ] (auto) Test point manipulation on active curve: verifies dragging/adding points updates the active curve's points array.
-- [ ] (auto) Test "All" / "None" quick toggle controls.
-- [ ] (auto) Verify full web test suite (`npx vitest run`) and web build (`npm run build`) pass cleanly.
+- [x] (auto) Test multi-curve rendering: verifies multiple curve paths are rendered when multiple curves are visible.
+- [x] (auto) Test visibility toggle: verifies toggling curve visibility removes/adds its path from the SVG DOM.
+- [x] (auto) Test active curve switching: verifies clicking a curve chip or inactive canvas curve updates the active editing curve and control points.
+- [x] (auto) Test point manipulation on active curve: verifies dragging/adding points updates the active curve's points array.
+- [x] (auto) Test "All" / "None" quick toggle controls.
+- [x] (auto) Verify full web test suite (`npx vitest run`) and web build (`npm run build`) pass cleanly.
+
+---
+
+## Implementation Notes & Decisions
+
+- **Palette & Collision-Free Resolution:** Added `CurvePaletteColor` in `web/src/types.ts` and an 8-color `CURVE_COLOR_PALETTE` (Indigo, Emerald, Amber, Cyan, Rose, Purple, Orange, Teal) in `web/src/utils/color.ts` with `getCurveColor(name)` (FNV-1a hash) and `resolveCurveColors(names)` (collision-avoiding assignment for up to 8 curves).
+- **SVG Helpers:** Added `getCurveGradientId`, `buildCurveLinePath`, and `buildCurveAreaPath` in `web/src/utils/svg.ts`.
+- **Multi-Curve Canvas & Non-SVG Chip Toggle:** Rendered inactive visible curves underneath the active curve with wider transparent hit targets (`stroke-width="12"`) and `@mousedown.stop` so clicking an inactive curve switches focus immediately without adding a point to the previously active curve. Used non-SVG indicators inside chip visibility buttons so canvas `<svg>` and `<circle>` selectors stay unambiguous.
+- **Live Brightness Cursor Sync:** Updated `web/src/App.vue` to pass `:room-brightness="liveRoomBrightness"` to `<CurveEditor>`, displaying the vertical reference cursor and live fixture output % readout across all visible curves.
+
+## Validation Evidence
+
+- `npx vitest run` (in `web/`): **9 test files passed, 75 tests passed** (including 23 tests in `CurveEditor.test.ts`, 5 in `color.test.ts`, and 4 in `svg.test.ts`).
+- `npm run build` (in `web/`): `vue-tsc --noEmit && vite build` passed with zero type or build errors.
+- `npm run test:e2e` (in `web/`): Playwright E2E smoke suite passed (**2/2 tests**).
