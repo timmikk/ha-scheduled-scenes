@@ -143,9 +143,10 @@ describe('CurveEditor.vue', () => {
     expect(curves.cove_ambient.lights).toEqual(['light.cove_1'])
     expect(curves.cove_ambient.points).toEqual([[0, 0], [50, 75], [100, 100]])
 
-    // Dropdown selection updated
-    const select = wrapper.find('select')
-    expect((select.element as HTMLSelectElement).value).toBe('cove_ambient')
+    // Active curve chip updated
+    const activeChip = wrapper.find('[data-testid="curve-chip"][data-curve-name="cove_ambient"]')
+    expect(activeChip.exists()).toBe(true)
+    expect(activeChip.attributes('data-active')).toBe('true')
     expect(wrapper.text()).toContain('cove_ambient')
   })
 
@@ -414,6 +415,385 @@ points:
       [30, 60],
       [100, 100],
     ])
-    expect((wrapper.find('select').element as HTMLSelectElement).value).toBe('imported_accent')
+
+    const importedChip = wrapper.find('[data-testid="curve-chip"][data-curve-name="imported_accent"]')
+    expect(importedChip.exists()).toBe(true)
+    expect(importedChip.attributes('data-active')).toBe('true')
+    expect(importedChip.attributes('data-visible')).toBe('true')
+  })
+
+  it('renders multiple visible curves simultaneously with distinct colors and gradients', () => {
+    const curves = reactive<Record<string, BrightnessCurve>>({
+      cove_led: {
+        name: 'cove_led',
+        lights: ['light.cove'],
+        points: [[0, 0], [50, 100], [100, 100]],
+      },
+      ceiling_downlights: {
+        name: 'ceiling_downlights',
+        lights: ['light.ceiling'],
+        points: [[0, 0], [30, 0], [100, 100]],
+      },
+      kitchen_task: {
+        name: 'kitchen_task',
+        lights: ['light.kitchen'],
+        points: [[0, 0], [100, 100]],
+      },
+    })
+
+    const wrapper = mount(CurveEditor, {
+      props: {
+        brightnessCurves: curves,
+        roomLights: ['light.cove', 'light.ceiling'],
+      },
+    })
+
+    // Room-associated curves default to visible; kitchen_task is hidden initially
+    expect(wrapper.find('path[data-curve-path="cove_led"]').exists()).toBe(true)
+    expect(wrapper.find('path[data-curve-path="ceiling_downlights"]').exists()).toBe(true)
+    expect(wrapper.find('path[data-curve-path="kitchen_task"]').exists()).toBe(false)
+
+    const coveStroke = wrapper.find('path[data-curve-path="cove_led"]').attributes('stroke')
+    const ceilingStroke = wrapper
+      .find('path[data-curve-path="ceiling_downlights"]')
+      .attributes('stroke')
+    expect(coveStroke).toBeTruthy()
+    expect(ceilingStroke).toBeTruthy()
+    expect(coveStroke).not.toBe(ceilingStroke)
+
+    // Linear gradients generated for visible curves
+    expect(wrapper.findAll('linearGradient').length).toBe(2)
+  })
+
+  it('toggles curve visibility on and off via chip toggle button', async () => {
+    const curves = reactive<Record<string, BrightnessCurve>>({
+      cove_led: {
+        name: 'cove_led',
+        lights: ['light.cove'],
+        points: [[0, 0], [100, 100]],
+      },
+      ceiling_downlights: {
+        name: 'ceiling_downlights',
+        lights: ['light.ceiling'],
+        points: [[0, 0], [50, 20], [100, 100]],
+      },
+    })
+
+    const wrapper = mount(CurveEditor, {
+      props: {
+        brightnessCurves: curves,
+        roomLights: ['light.cove', 'light.ceiling'],
+      },
+    })
+
+    expect(wrapper.find('path[data-curve-path="ceiling_downlights"]').exists()).toBe(true)
+
+    const ceilingChip = wrapper.find('[data-testid="curve-chip"][data-curve-name="ceiling_downlights"]')
+    const toggleBtn = ceilingChip.find('[data-testid="curve-visibility-toggle"]')
+
+    // Hide ceiling_downlights
+    await toggleBtn.trigger('click')
+    expect(wrapper.find('path[data-curve-path="ceiling_downlights"]').exists()).toBe(false)
+    expect(ceilingChip.attributes('data-visible')).toBe('false')
+
+    // Show ceiling_downlights again
+    await toggleBtn.trigger('click')
+    expect(wrapper.find('path[data-curve-path="ceiling_downlights"]').exists()).toBe(true)
+    expect(ceilingChip.attributes('data-visible')).toBe('true')
+  })
+
+  it('switches active curve when clicking a curve chip or an inactive canvas curve', async () => {
+    const curves = reactive<Record<string, BrightnessCurve>>({
+      cove_led: {
+        name: 'cove_led',
+        lights: ['light.cove'],
+        points: [[0, 0], [50, 100], [100, 100]],
+      },
+      ceiling_downlights: {
+        name: 'ceiling_downlights',
+        lights: ['light.ceiling'],
+        points: [[0, 0], [40, 10], [80, 75], [100, 100]],
+      },
+    })
+
+    const wrapper = mount(CurveEditor, {
+      props: {
+        brightnessCurves: curves,
+        roomLights: ['light.cove', 'light.ceiling'],
+      },
+    })
+
+    // Initially cove_led is active (3 draggable active points)
+    expect(wrapper.findAll('circle[data-active-point="true"]').length).toBe(3)
+    expect(
+      wrapper
+        .find('[data-testid="curve-chip"][data-curve-name="cove_led"]')
+        .attributes('data-active')
+    ).toBe('true')
+
+    // Click inactive canvas curve path for ceiling_downlights
+    const inactivePath = wrapper.find('path[data-curve-path="ceiling_downlights"]')
+    await inactivePath.trigger('mousedown')
+
+    expect(
+      wrapper
+        .find('[data-testid="curve-chip"][data-curve-name="ceiling_downlights"]')
+        .attributes('data-active')
+    ).toBe('true')
+    // Active points now reflect ceiling_downlights (4 points)
+    expect(wrapper.findAll('circle[data-active-point="true"]').length).toBe(4)
+
+    // Switch back via curve chip selection button
+    const coveSelectBtn = wrapper
+      .find('[data-testid="curve-chip"][data-curve-name="cove_led"]')
+      .find('[data-testid="curve-select-btn"]')
+    await coveSelectBtn.trigger('click')
+
+    expect(
+      wrapper
+        .find('[data-testid="curve-chip"][data-curve-name="cove_led"]')
+        .attributes('data-active')
+    ).toBe('true')
+    expect(wrapper.findAll('circle[data-active-point="true"]').length).toBe(3)
+  })
+
+  it('supports adding and dragging control points on the active curve', async () => {
+    const curves = reactive<Record<string, BrightnessCurve>>({
+      cove_led: {
+        name: 'cove_led',
+        lights: [],
+        points: [[0, 0], [100, 100]],
+      },
+    })
+
+    const wrapper = mount(CurveEditor, {
+      props: {
+        brightnessCurves: curves,
+      },
+    })
+
+    const svgWrapper = wrapper.find('svg[data-testid="curve-canvas"]')
+    const svgEl = svgWrapper.element as SVGSVGElement
+    svgEl.setAttribute('viewBox', '0 0 800 256')
+    svgEl.getBoundingClientRect = () => ({
+      width: 800,
+      height: 256,
+      top: 0,
+      left: 0,
+      bottom: 256,
+      right: 800,
+      x: 0,
+      y: 0,
+      toJSON: () => {},
+    })
+
+    // Click near center of canvas: PAD_X=24, width=800 -> x=400 => roomB=50
+    // PAD_Y=18, height=256 -> y=128 => fixB=50
+    await svgWrapper.trigger('mousedown', { clientX: 400, clientY: 128 })
+    expect(curves.cove_led.points.length).toBe(3)
+    expect(curves.cove_led.points[1]).toEqual([50, 50])
+    expect(wrapper.emitted('update:previewRoomBrightness')?.[0]).toEqual([50])
+
+    // Drag the new point upward and right (clientX ~ 550, clientY ~ 60)
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 550, clientY: 60 }))
+    window.dispatchEvent(new MouseEvent('mouseup'))
+
+    expect(curves.cove_led.points[1][0]).toBeGreaterThan(50)
+    expect(curves.cove_led.points[1][1]).toBeGreaterThan(50)
+    expect(wrapper.emitted('update:previewRoomBrightness')?.length).toBeGreaterThan(1)
+  })
+
+  it('supports All, None, and Room Fixtures quick toggle controls', async () => {
+    const curves = reactive<Record<string, BrightnessCurve>>({
+      living_cove: {
+        name: 'living_cove',
+        lights: ['light.living_cove'],
+        points: [[0, 0], [100, 100]],
+      },
+      living_ceiling: {
+        name: 'living_ceiling',
+        lights: ['light.living_ceiling'],
+        points: [[0, 0], [100, 100]],
+      },
+      kitchen_task: {
+        name: 'kitchen_task',
+        lights: ['light.kitchen_strip'],
+        points: [[0, 0], [100, 100]],
+      },
+    })
+
+    const wrapper = mount(CurveEditor, {
+      props: {
+        brightnessCurves: curves,
+        roomLights: ['light.living_cove', 'light.living_ceiling'],
+      },
+    })
+
+    // Click "All" -> all 3 curves visible
+    await wrapper.find('[data-testid="quick-show-all"]').trigger('click')
+    expect(wrapper.find('path[data-curve-path="living_cove"]').exists()).toBe(true)
+    expect(wrapper.find('path[data-curve-path="living_ceiling"]').exists()).toBe(true)
+    expect(wrapper.find('path[data-curve-path="kitchen_task"]').exists()).toBe(true)
+
+    // Click "None" -> only active curve (living_cove) visible
+    await wrapper.find('[data-testid="quick-show-none"]').trigger('click')
+    expect(wrapper.find('path[data-curve-path="living_cove"]').exists()).toBe(true)
+    expect(wrapper.find('path[data-curve-path="living_ceiling"]').exists()).toBe(false)
+    expect(wrapper.find('path[data-curve-path="kitchen_task"]').exists()).toBe(false)
+
+    // Click "Room Fixtures" -> living_cove and living_ceiling visible, kitchen_task hidden
+    await wrapper.find('[data-testid="quick-show-room"]').trigger('click')
+    expect(wrapper.find('path[data-curve-path="living_cove"]').exists()).toBe(true)
+    expect(wrapper.find('path[data-curve-path="living_ceiling"]').exists()).toBe(true)
+    expect(wrapper.find('path[data-curve-path="kitchen_task"]').exists()).toBe(false)
+  })
+
+  it('supports duplicating and deleting curves with confirmation when assigned', async () => {
+    const curves = reactive<Record<string, BrightnessCurve>>({
+      cove_led: {
+        name: 'cove_led',
+        lights: ['light.cove'],
+        points: [[0, 0], [40, 80], [100, 100]],
+      },
+    })
+
+    const promptMock = vi.fn().mockReturnValue('cove_led_v2')
+    const confirmMock = vi.fn().mockReturnValue(true)
+    vi.stubGlobal('prompt', promptMock)
+    vi.stubGlobal('confirm', confirmMock)
+
+    try {
+      const wrapper = mount(CurveEditor, {
+        props: {
+          brightnessCurves: curves,
+          roomLights: ['light.cove'],
+        },
+      })
+
+      // Duplicate active curve
+      const dupBtn = wrapper.findAll('button').find((b) => b.text().trim() === 'Duplicate')
+      await dupBtn!.trigger('click')
+
+      expect(curves.cove_led_v2).toBeDefined()
+      expect(curves.cove_led_v2.points).toEqual([[0, 0], [40, 80], [100, 100]])
+      expect(
+        wrapper
+          .find('[data-testid="curve-chip"][data-curve-name="cove_led_v2"]')
+          .attributes('data-active')
+      ).toBe('true')
+
+      // Switch back to cove_led (which has assigned light) and delete it
+      await wrapper
+        .find('[data-testid="curve-chip"][data-curve-name="cove_led"] [data-testid="curve-select-btn"]')
+        .trigger('click')
+
+      const delBtn = wrapper.findAll('button').find((b) => b.text().trim() === 'Delete')
+      await delBtn!.trigger('click')
+
+      expect(confirmMock).toHaveBeenCalledTimes(1)
+      expect(curves.cove_led).toBeUndefined()
+      expect(
+        wrapper
+          .find('[data-testid="curve-chip"][data-curve-name="cove_led_v2"]')
+          .attributes('data-active')
+      ).toBe('true')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('renders vertical room brightness cursor and intersection values across visible curves', () => {
+    const curves = reactive<Record<string, BrightnessCurve>>({
+      cove_led: {
+        name: 'cove_led',
+        lights: ['light.cove'],
+        points: [[0, 0], [50, 100], [100, 100]],
+      },
+      ceiling_main: {
+        name: 'ceiling_main',
+        lights: ['light.ceiling'],
+        points: [[0, 0], [50, 20], [100, 100]],
+      },
+    })
+
+    const wrapper = mount(CurveEditor, {
+      props: {
+        brightnessCurves: curves,
+        roomLights: ['light.cove', 'light.ceiling'],
+        roomBrightness: 50,
+      },
+    })
+
+    expect(wrapper.find('[data-testid="room-brightness-cursor"]').exists()).toBe(true)
+    const intersectionDots = wrapper.findAll('circle[data-cursor-intersection="true"]')
+    expect(intersectionDots.length).toBe(2)
+
+    const readout = wrapper.find('[data-testid="cursor-readout"]').text()
+    expect(readout).toContain('Room 50%')
+    expect(readout).toContain('cove_led')
+    expect(readout).toContain('100%')
+    expect(readout).toContain('ceiling_main')
+    expect(readout).toContain('20%')
+  })
+
+  it('deletes point on double-click while preserving at least 2 control points', async () => {
+    const curves = reactive<Record<string, BrightnessCurve>>({
+      cove_led: {
+        name: 'cove_led',
+        lights: [],
+        points: [[0, 0], [50, 80], [100, 100]],
+      },
+    })
+
+    const wrapper = mount(CurveEditor, {
+      props: {
+        brightnessCurves: curves,
+      },
+    })
+
+    let circles = wrapper.findAll('circle[data-active-point="true"]')
+    expect(circles.length).toBe(3)
+
+    // Double-click middle point -> deleted
+    await circles[1].trigger('dblclick')
+    expect(curves.cove_led.points).toEqual([[0, 0], [100, 100]])
+
+    // Double-click remaining point -> preserved at minimum 2 points
+    circles = wrapper.findAll('circle[data-active-point="true"]')
+    await circles[0].trigger('dblclick')
+    expect(curves.cove_led.points.length).toBe(2)
+  })
+
+  it('attaches and detaches unassigned room fixtures on the active curve', async () => {
+    const curves = reactive<Record<string, BrightnessCurve>>({
+      cove_led: {
+        name: 'cove_led',
+        lights: ['light.cove'],
+        points: [[0, 0], [100, 100]],
+      },
+    })
+
+    const wrapper = mount(CurveEditor, {
+      props: {
+        brightnessCurves: curves,
+        roomLights: ['light.cove', 'light.ceiling'],
+      },
+    })
+
+    // Attach unassigned light.ceiling
+    const attachBtn = wrapper.findAll('button').find((b) => b.text().includes('+ Attach Room Light'))
+    expect(attachBtn).toBeDefined()
+    await attachBtn!.trigger('click')
+
+    const ceilingOption = wrapper.findAll('button').find((b) => b.text().includes('ceiling'))
+    expect(ceilingOption).toBeDefined()
+    await ceilingOption!.trigger('click')
+    expect(curves.cove_led.lights).toEqual(['light.cove', 'light.ceiling'])
+
+    // Detach light.cove
+    const removeButtons = wrapper.findAll('button[title="Remove fixture from curve"]')
+    expect(removeButtons.length).toBe(2)
+    await removeButtons[0].trigger('click')
+    expect(curves.cove_led.lights).toEqual(['light.ceiling'])
   })
 })

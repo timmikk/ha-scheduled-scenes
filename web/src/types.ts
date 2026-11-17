@@ -23,6 +23,18 @@ export interface BrightnessCurve {
   points: [number, number][] // [room_brightness, fixture_brightness]
 }
 
+export interface CurvePaletteColor {
+  id: string
+  name: string
+  stroke: string
+  fill: string
+  bgClass: string
+  textClass: string
+  borderClass: string
+  badgeClass: string
+  dotClass: string
+}
+
 export interface ProgramConfig {
   name: string
   lights: string[]

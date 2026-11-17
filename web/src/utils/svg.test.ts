@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { getSvgCoordinates } from './svg'
+import {
+  getSvgCoordinates,
+  getCurveGradientId,
+  buildCurveLinePath,
+  buildCurveAreaPath,
+} from './svg'
 
 describe('svg coordinate mapping', () => {
   it('returns (0,0) when bounding client rect is zero size', () => {
@@ -39,5 +44,40 @@ describe('svg coordinate mapping', () => {
     const coords = getSvgCoordinates(svg, new MouseEvent('mousemove', { clientX: 350, clientY: 225 }))
     expect(coords.x).toBeCloseTo(500, 1)
     expect(coords.y).toBeCloseTo(250, 1)
+  })
+
+  it('builds sorted curve line and closed area paths', () => {
+    const scaleX = (x: number) => x * 2
+    const scaleY = (y: number) => 200 - y * 2
+
+    const line = buildCurveLinePath(
+      [
+        [100, 100],
+        [0, 0],
+        [50, 80],
+      ],
+      scaleX,
+      scaleY
+    )
+    expect(line).toBe('M 0,200 L 100,40 L 200,0')
+
+    const area = buildCurveAreaPath(
+      [
+        [0, 0],
+        [50, 80],
+        [100, 100],
+      ],
+      scaleX,
+      scaleY
+    )
+    expect(area).toBe('M 0,200 L 100,40 L 200,0 L 200,200 L 0,200 Z')
+  })
+
+  it('generates distinct DOM-safe gradient IDs for different curve names', () => {
+    const id1 = getCurveGradientId('living room accent')
+    const id2 = getCurveGradientId('living_room_accent')
+    expect(id1).toMatch(/^[a-zA-Z0-9_-]+$/)
+    expect(id2).toMatch(/^[a-zA-Z0-9_-]+$/)
+    expect(id1).not.toBe(id2)
   })
 })

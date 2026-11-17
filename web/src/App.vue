@@ -194,6 +194,7 @@
         <CurveEditor
           :brightness-curves="config.brightness_curves"
           :room-lights="currentProgram.lights"
+          :room-brightness="liveRoomBrightness"
           @open-global-dtw="activeView = 'dim_to_warm'"
           @update:preview-room-brightness="liveRoomBrightness = $event"
         />
