@@ -1,5 +1,7 @@
 """Tests for coordinator runtime, services, and entity interactions."""
 
+from datetime import UTC, datetime
+
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -25,6 +27,38 @@ from custom_components.scheduled_scenes.const import (
     SERVICE_TURN_ON,
 )
 from custom_components.scheduled_scenes.coordinator import ScheduledSceneProgram
+
+
+def test_coordinator_resolves_solar_schedule_for_simulated_dates(hass: HomeAssistant) -> None:
+    hass.config.latitude = 60.17
+    hass.config.longitude = 24.94
+    config = {
+        CONF_NAME: "seasonal",
+        CONF_LIGHTS: ["light.seasonal"],
+        CONF_SCHEDULE: [
+            {"time": "00:00", "brightness": 0},
+            {"time": "06:00", "brightness": 100, "dynamic": {"type": "sun", "event": "sunrise"}},
+            {"time": "12:00", "brightness": 100},
+        ],
+    }
+    program = ScheduledSceneProgram(hass, config)
+    summer = program._schedule_for(datetime(2024, 6, 21, 12, tzinfo=UTC))
+    winter = program._schedule_for(datetime(2024, 12, 21, 12, tzinfo=UTC))
+    summer_rise = next(step for step in summer if step.dynamic)
+    winter_rise = next(step for step in winter if step.dynamic)
+    assert summer_rise.time < winter_rise.time
+    assert (winter_rise.time.hour - summer_rise.time.hour) * 60 + winter_rise.time.minute - summer_rise.time.minute > 300
+
+
+def test_coordinator_falls_back_to_configured_time_without_coordinates(hass: HomeAssistant) -> None:
+    config = {
+        CONF_NAME: "fallback",
+        CONF_LIGHTS: ["light.fallback"],
+        CONF_SCHEDULE: [{"time": "07:15", "brightness": 80, "dynamic": {"type": "sun", "event": "sunrise"}}],
+    }
+    program = ScheduledSceneProgram(hass, config)
+    program.latitude = None
+    assert program._schedule_for(datetime(2024, 6, 21, tzinfo=UTC)) is program.schedule
 
 
 async def test_coordinator_turn_on_and_off(hass: HomeAssistant) -> None:

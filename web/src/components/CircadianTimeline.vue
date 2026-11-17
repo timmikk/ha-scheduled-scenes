@@ -112,6 +112,12 @@
         <!-- Line Curve Path -->
         <path :d="linePath" fill="none" stroke="#6366f1" stroke-width="2.5" />
 
+        <g v-for="entry in seasonalRanges" :key="entry.id" stroke="#fbbf24" stroke-opacity="0.45" stroke-dasharray="2 3" pointer-events="none">
+          <line :x1="scaleX(entry.range[0])" :x2="scaleX(entry.range[1])" :y1="scaleY(entry.brightness)" :y2="scaleY(entry.brightness)">
+            <title>{{ entry.tooltip }}</title>
+          </line>
+        </g>
+
         <!-- Kelvin Bar at the bottom of the graph -->
         <rect
           :x="0"
@@ -143,7 +149,8 @@
         />
 
         <!-- Draggable Checkpoint Nodes -->
-        <g v-for="step in steps" :key="step.id">
+        <g v-for="step in sortedSteps" :key="step.id">
+          <circle v-if="collisionIds.has(step.id)" :cx="scaleX(timeToMinutes(step.time))" :cy="scaleY(step.brightness)" r="13" fill="none" stroke="#fb7185" stroke-width="2" />
           <circle
             :cx="scaleX(timeToMinutes(step.time))"
             :cy="scaleY(step.brightness)"
@@ -156,6 +163,7 @@
             @mouseleave="hoveredStepId = null"
             @mousedown.stop="onNodeMouseDown(step, $event)"
           />
+          <circle v-if="step.dynamic" :cx="scaleX(timeToMinutes(step.time))" :cy="scaleY(step.brightness)" r="10" fill="none" stroke="#fbbf24" stroke-width="1.5" pointer-events="none" />
         </g>
       </svg>
 
@@ -171,6 +179,7 @@
         <span>21:00</span>
         <span>23:59</span>
       </div>
+
     </div>
 
     <!-- Selected Checkpoint Inspector / Quick Editor -->
@@ -178,6 +187,11 @@
       v-if="selectedStep"
       class="bg-slate-950/90 border border-slate-800 rounded-lg p-3.5 flex items-center justify-between flex-wrap gap-4"
     >
+      <div v-if="selectedStep.dynamic" class="w-full rounded border border-amber-800/60 bg-amber-950/30 px-3 py-2 text-xs text-amber-100">
+        <span>Resolved {{ selectedDynamicDetails?.time ?? 'Unavailable' }} for {{ simulationDateLabel }}.</span>
+        <span v-if="selectedDynamicDetails?.range"> Yearly range: {{ selectedDynamicDetails.range }}.</span>
+        <span v-if="collisionIds.has(selectedStep.id)" class="ml-2 text-rose-300">Collision: this point overlaps another checkpoint within one minute.</span>
+      </div>
       <div class="flex items-center gap-3">
         <span
           class="w-5 h-5 rounded-full border border-white/40 shadow-inner"
@@ -185,13 +199,36 @@
         ></span>
         <div class="text-xs">
           <span class="text-slate-400">Editing Checkpoint:</span>
-          <span class="font-bold text-slate-200 ml-1 font-mono">{{ selectedStep.time }}</span>
+          <span class="font-bold text-slate-200 ml-1 font-mono">{{ selectedStep.dynamic ? (selectedDynamicDetails?.time ?? 'Unavailable') : selectedStep.time }}</span>
         </div>
       </div>
 
       <div class="flex items-center gap-4 flex-wrap">
+        <label class="flex items-center gap-2 text-xs font-semibold text-slate-400">Point:
+          <select :value="selectedStep.dynamic ? 'dynamic' : 'fixed'" @change="setPointType(($event.target as HTMLSelectElement).value)" class="bg-slate-900 border border-slate-700 text-slate-200 rounded px-2 py-1">
+            <option value="fixed">Fixed Time</option><option value="dynamic">Dynamic</option>
+          </select>
+        </label>
+        <template v-if="selectedStep.dynamic">
+          <label class="text-xs text-slate-400">Dynamic Source
+            <select :value="selectedStep.dynamic.type" @change="setDynamicSource(($event.target as HTMLSelectElement).value)" class="bg-slate-900 border border-slate-700 text-slate-200 rounded px-2 py-1">
+              <option v-for="provider in dynamicPointProviders" :key="provider.type" :value="provider.type" :disabled="!provider.enabled">{{ provider.label }}</option>
+            </select>
+          </label>
+          <label class="text-xs text-slate-400">Sun event
+            <select v-model="selectedStep.dynamic.event" @change="commitSelectedStep" class="bg-slate-900 border border-slate-700 text-slate-200 rounded px-2 py-1">
+              <option value="sunrise">Sunrise</option><option value="sunset">Sunset</option><option value="solar_noon">Solar Noon</option><option value="solar_midnight">Solar Midnight</option><option value="dawn">Civil Dawn</option><option value="dusk">Civil Dusk</option><option value="elevation">Elevation Angle</option>
+            </select>
+          </label>
+          <label v-if="selectedStep.dynamic.event === 'elevation'" class="text-xs text-slate-400">Angle ° <input type="number" min="-90" max="90" v-model.number="selectedStep.dynamic.elevation" @change="commitSelectedStep" class="w-16 bg-slate-900 border border-slate-700 rounded px-1 py-1 text-slate-200" /></label>
+          <label v-if="selectedStep.dynamic.event === 'elevation'" class="text-xs text-slate-400">Direction
+            <select v-model="selectedStep.dynamic.direction" @change="commitSelectedStep" class="bg-slate-900 border border-slate-700 text-slate-200 rounded px-2 py-1"><option value="rising">Rising</option><option value="setting">Setting</option></select>
+          </label>
+          <label class="text-xs text-slate-400">Offset <input type="number" v-model.number="selectedStep.dynamic.offset_value" @change="commitSelectedStep" class="w-16 bg-slate-900 border border-slate-700 rounded px-1 py-1 text-slate-200" /></label>
+          <select v-model="selectedStep.dynamic.offset_unit" @change="commitSelectedStep" class="bg-slate-900 border border-slate-700 text-slate-200 rounded px-2 py-1 text-xs"><option value="time">Minutes</option><option value="angle">Degrees</option></select>
+        </template>
         <!-- Time Input -->
-        <div class="flex items-center gap-2">
+        <div v-if="!selectedStep.dynamic" class="flex items-center gap-2">
           <label class="text-xs font-semibold text-slate-400">Time:</label>
           <input
             type="time"
@@ -335,6 +372,7 @@ import {
   minutesToTime,
   interpolateSchedule,
 } from '../utils/interpolator'
+import { resolveSunPoint, yearlyVariation } from '../utils/solar'
 import { kelvinToCssColor } from '../utils/color'
 import { getSvgCoordinates } from '../utils/svg'
 import {
@@ -347,6 +385,10 @@ const props = defineProps<{
   steps: ScheduleStep[]
   scrubMinutes: number | null
   liveMode?: LiveModeType
+  latitude?: number
+  longitude?: number
+  simulationDate?: string
+  resolvedSteps?: ScheduleStep[]
 }>()
 
 const emit = defineEmits<{
@@ -445,6 +487,31 @@ function syncScrubToSelectedStep() {
   }
 }
 
+function setPointType(type: string) {
+  if (!selectedStep.value) return
+  if (type === 'dynamic') selectedStep.value.dynamic = selectedStep.value.dynamic ?? { type: 'sun', event: 'sunrise', offset_value: 0, offset_unit: 'time' }
+  else selectedStep.value.dynamic = undefined
+  commitSelectedStep()
+}
+
+const dynamicPointProviders = [
+  { type: 'sun', label: 'Sun', enabled: true },
+  { type: 'sensor', label: 'Ambient Sensor (coming later)', enabled: false },
+] as const
+
+function setDynamicSource(source: string) {
+  if (!selectedStep.value?.dynamic || source !== 'sun') return
+  selectedStep.value.dynamic.type = 'sun'
+  commitSelectedStep()
+}
+
+function commitSelectedStep() {
+  if (!selectedStep.value) return
+  emit('update:steps', props.steps.map(step => step.id === selectedStep.value?.id
+    ? { ...step, dynamic: step.dynamic ? { ...step.dynamic } : undefined }
+    : step))
+}
+
 function scaleX(minutes: number): number {
   return (minutes / 1440) * svgWidth.value
 }
@@ -463,11 +530,47 @@ function unscaleY(y: number): number {
 }
 
 const sortedSteps = computed(() => {
-  return [...props.steps].sort((a, b) => timeToMinutes(a.time) - timeToMinutes(b.time))
+  return [...(props.resolvedSteps ?? props.steps)].sort((a, b) => timeToMinutes(a.time) - timeToMinutes(b.time))
+})
+
+const seasonalRanges = computed(() => props.steps.flatMap(step => {
+  if (!step.dynamic) return []
+  const year = Number(props.simulationDate?.slice(0, 4)) || new Date().getFullYear()
+  const range = yearlyVariation(step.dynamic, new Date(year, 0, 1), props.latitude ?? 0, props.longitude ?? 0)
+  const event = step.dynamic.event ?? 'sunrise'
+  const angle = step.dynamic.elevation === undefined ? '' : ` at ${step.dynamic.elevation}° ${step.dynamic.direction ?? 'rising'}`
+  const tooltip = `${event}${angle} · ${props.latitude ?? 0}°, ${props.longitude ?? 0}° · yearly range ${minutesToTime(range?.[0] ?? 0)}–${minutesToTime(range?.[1] ?? 0)}`
+  return range ? [{ id: step.id, range, brightness: step.brightness, tooltip }] : []
+}))
+
+const collisionIds = computed(() => {
+  const date = new Date(`${props.simulationDate ?? new Date().toISOString().slice(0, 10)}T12:00:00`)
+  const candidates = props.steps.map(step => {
+    const raw = step.dynamic?.type === 'sun' ? resolveSunPoint(step.dynamic, date, props.latitude ?? 0, props.longitude ?? 0) : null
+    const minute = raw === null ? timeToMinutes(step.time) : ((raw - date.getTimezoneOffset()) % 1440 + 1440) % 1440
+    return { id: step.id, minute }
+  })
+  const ids = new Set<string>()
+  for (let i = 0; i < candidates.length; i++) for (let j = i + 1; j < candidates.length; j++) {
+    const delta = Math.abs(candidates[i].minute - candidates[j].minute)
+    if (Math.min(delta, 1440 - delta) <= 1) { ids.add(candidates[i].id); ids.add(candidates[j].id) }
+  }
+  return ids
+})
+
+const simulationDateLabel = computed(() => props.simulationDate ?? new Date().toISOString().slice(0, 10))
+const selectedDynamicDetails = computed(() => {
+  const step = selectedStep.value
+  if (!step?.dynamic) return null
+  const date = new Date(`${simulationDateLabel.value}T12:00:00`)
+  const resolved = resolveSunPoint(step.dynamic, date, props.latitude ?? 0, props.longitude ?? 0)
+  const local = resolved === null ? null : ((resolved - date.getTimezoneOffset()) % 1440 + 1440) % 1440
+  const range = yearlyVariation(step.dynamic, date, props.latitude ?? 0, props.longitude ?? 0)
+  return { time: local === null ? null : minutesToTime(local), range: range ? `${minutesToTime(range[0])}–${minutesToTime(range[1])}` : null }
 })
 
 const interpolatedNow = computed(() => {
-  return interpolateSchedule(props.steps, props.scrubMinutes ?? 720)
+  return interpolateSchedule(sortedSteps.value, props.scrubMinutes ?? 720)
 })
 
 // Build SVG paths with seamless 24h midnight continuity
@@ -479,8 +582,8 @@ const linePath = computed(() => {
     return `M 0,${y} L ${svgWidth.value},${y}`
   }
 
-  const pStart = interpolateSchedule(props.steps, 0)
-  const pEnd = interpolateSchedule(props.steps, 1440)
+  const pStart = interpolateSchedule(sortedSteps.value, 0)
+  const pEnd = interpolateSchedule(sortedSteps.value, 1440)
 
   let d = `M 0,${scaleY(pStart.brightness)}`
   for (const step of list) {
@@ -501,7 +604,7 @@ const kelvinGradientStops = computed(() => {
   const samples = 12
   for (let i = 0; i <= samples; i++) {
     const m = (i / samples) * 1440
-    const interp = interpolateSchedule(props.steps, m)
+    const interp = interpolateSchedule(sortedSteps.value, m)
     stops.push({
       offset: `${((i / samples) * 100).toFixed(1)}%`,
       color: kelvinToCssColor(interp.temp),
@@ -516,6 +619,11 @@ function onNodeMouseDown(step: ScheduleStep, e: MouseEvent) {
   draggingStepId.value = step.id
   emit('selectStep', step)
   emit('update:scrubMinutes', timeToMinutes(step.time))
+
+  if (step.dynamic) {
+    draggingStepId.value = null
+    return
+  }
 
   window.addEventListener('mousemove', onWindowMouseMove)
   window.addEventListener('mouseup', onWindowMouseUp)

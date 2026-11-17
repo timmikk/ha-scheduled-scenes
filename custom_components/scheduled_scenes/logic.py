@@ -9,11 +9,23 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta
-from typing import Any
+from typing import Any, Literal, TypedDict, cast
 
 _LOGGER = logging.getLogger(__name__)
 
 DEFAULT_COLOR_TEMP = 2700
+
+
+class DynamicPointConfig(TypedDict, total=False):
+    """Serializable dynamic schedule point source configuration."""
+
+    type: Literal["sun", "sensor"]
+    event: Literal["sunrise", "sunset", "solar_noon", "solar_midnight", "dawn", "dusk", "elevation"]
+    elevation: float
+    direction: Literal["rising", "setting", "any"]
+    offset_value: float
+    offset_unit: Literal["time", "angle"]
+    overlap_priority: int
 
 
 @dataclass(frozen=True)
@@ -167,6 +179,8 @@ class ScheduleStep:
     brightness: int
     temp: int | None = None
     lights: dict[str, LightOverride] = field(default_factory=dict)
+    dynamic: DynamicPointConfig | None = None
+    overlap_priority: int = 0
 
 
 @dataclass(frozen=True)
@@ -403,7 +417,7 @@ def parse_time(time_val: str | time) -> time:
 
 def parse_schedule_step(data: dict) -> ScheduleStep:
     """Parse a single raw schedule step dictionary into a ScheduleStep."""
-    t = parse_time(data["time"])
+    t = parse_time(data.get("time", "00:00"))
     b_val = data.get(
         "brightness", data.get("dim_to_warm", data.get("dimm_to_warm", 100))
     )
@@ -430,11 +444,20 @@ def parse_schedule_step(data: dict) -> ScheduleStep:
                 )
                 light_overrides[light_id] = LightOverride(brightness=b, temp=k)
 
+    raw_dynamic = data.get("dynamic")
+    dynamic = (
+        cast(DynamicPointConfig, raw_dynamic)
+        if isinstance(raw_dynamic, dict) and raw_dynamic.get("type") in ("sun", "sensor")
+        else None
+    )
+
     return ScheduleStep(
         time=t,
         brightness=brightness,
         temp=temp,
         lights=light_overrides,
+        dynamic=dynamic,
+        overlap_priority=int(dynamic.get("overlap_priority", 0)) if dynamic else 0,
     )
 
 
@@ -445,6 +468,45 @@ def parse_schedule(raw_steps: list[dict]) -> list[ScheduleStep]:
     steps = [parse_schedule_step(s) for s in raw_steps]
     steps.sort(key=lambda s: s.time)
     return steps
+
+
+def resolve_dynamic_schedule(steps: list[ScheduleStep], day: datetime, latitude: float, longitude: float) -> list[ScheduleStep]:
+    """Resolve solar checkpoints and discard collisions deterministically.
+
+    If a sun event does not occur (polar day/night), retain that step's configured
+    time as the documented fallback.
+    """
+    from .solar import resolve_sun_point
+
+    candidates: list[tuple[ScheduleStep, int, int]] = []
+    for index, step in enumerate(steps):
+        minute = step.time.hour * 60 + step.time.minute
+        if step.dynamic and step.dynamic.get("type", "sun") == "sun":
+            resolved = resolve_sun_point(step.dynamic, day, latitude, longitude)
+            if resolved is not None:
+                # Solar formulas return UTC minutes; schedule times use HA local time.
+                offset = day.utcoffset()
+                minute = (resolved + (offset.total_seconds() / 60 if offset else 0)) % 1440
+        candidates.append((step, minute, index))
+    def priority(step: ScheduleStep) -> int:
+        return (
+            int(step.dynamic.get("overlap_priority", step.overlap_priority))
+            if step.dynamic
+            else step.overlap_priority
+        )
+
+    candidates.sort(key=lambda item: (item[1], -priority(item[0]), not bool(item[0].dynamic), item[2]))
+    kept: list[tuple[ScheduleStep, int, int]] = []
+    for candidate in candidates:
+        collisions = [item for item in kept if min(abs(item[1] - candidate[1]), 1440 - abs(item[1] - candidate[1])) <= 1]
+        if collisions:
+            contenders = [*collisions, candidate]
+            winner = max(contenders, key=lambda item: (priority(item[0]), bool(item[0].dynamic), -item[2]))
+            kept = [item for item in kept if item not in collisions]
+            kept.append(winner)
+            continue
+        kept.append(candidate)
+    return [ScheduleStep(time=time(hour=(minute % 1440) // 60, minute=minute % 60), brightness=step.brightness, temp=step.temp, lights=step.lights, dynamic=step.dynamic, overlap_priority=step.overlap_priority) for step, minute, _ in sorted(kept, key=lambda item: item[1])]
 
 
 def resolve_active_transition(

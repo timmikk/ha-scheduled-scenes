@@ -30,6 +30,18 @@ describe('curveYaml utils', () => {
     it('handles empty step array gracefully', () => {
       expect(serializeScheduleYaml([])).toBe('schedule: []\n')
     })
+
+    it('preserves dynamic point definitions through YAML copy and import', () => {
+      const steps: ScheduleStep[] = [
+        { id: 'sun', time: '06:00', brightness: 70, dynamic: { type: 'sun', event: 'sunrise', offset_value: 5, offset_unit: 'angle' } },
+        { id: 'fixed', time: '12:00', brightness: 100 },
+      ]
+      const yaml = serializeScheduleYaml(steps)
+      expect(yaml).toContain('dynamic:')
+      const parsed = parseScheduleYaml(yaml)
+      expect(parsed.success).toBe(true)
+      expect(parsed.data?.[0].dynamic).toEqual(steps[0].dynamic)
+    })
   })
 
   describe('parseScheduleYaml', () => {

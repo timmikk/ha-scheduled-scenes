@@ -7,6 +7,7 @@ import {
   evaluateDimToWarm,
   interpolateSchedule,
   calculateFixtureOutput,
+  resolveDynamicSchedule,
 } from './interpolator'
 import type { ScheduleStep } from '../types'
 
@@ -93,6 +94,34 @@ describe('interpolator utilities', () => {
       expect(active.progress).toBeCloseTo(0.5, 2)
       expect(active.brightness).toBe(30) // halfway between 40 and 20
       expect(active.temp).toBe(2200) // halfway between 2400 and 2000
+    })
+  })
+
+  describe('dynamic schedule resolution', () => {
+    it('sorts dynamic crossings and deduplicates collisions by priority', () => {
+      const date = new Date(2024, 5, 21, 12)
+      const dynamic: ScheduleStep = { id: 'sun', time: '12:00', brightness: 80, dynamic: { type: 'sun', event: 'solar_noon', overlap_priority: 2 } }
+      const first = resolveDynamicSchedule([dynamic], date, 0, 0)[0]
+      expect(first.resolvedMinuteOfDay).toBeGreaterThanOrEqual(0)
+      expect(first.resolvedMinuteOfDay).toBeLessThan(1440)
+      const duplicate: ScheduleStep = { id: 'static', time: first.time, brightness: 10 }
+      const result = resolveDynamicSchedule([duplicate, dynamic], date, 0, 0)
+      expect(result).toHaveLength(1)
+      expect(result[0].id).toBe('sun')
+      const adjacent: ScheduleStep = { id: 'higher-priority', time: '12:00', brightness: 90, dynamic: { type: 'sun', event: 'solar_noon', offset_value: 1, offset_unit: 'time', overlap_priority: 4 } }
+      expect(resolveDynamicSchedule([dynamic, adjacent], date, 0, 0).map(step => step.id)).toEqual(['higher-priority'])
+    })
+
+    it('changes simulated interpolation as sunrise shifts by season', () => {
+      const steps: ScheduleStep[] = [
+        { id: 'night', time: '00:00', brightness: 0 },
+        { id: 'sunrise', time: '06:00', brightness: 100, dynamic: { type: 'sun', event: 'sunrise' } },
+        { id: 'day', time: '12:00', brightness: 100 },
+        { id: 'evening', time: '23:59', brightness: 0 },
+      ]
+      const summer = resolveDynamicSchedule(steps, new Date(2024, 5, 21, 12), 60, 25)
+      const winter = resolveDynamicSchedule(steps, new Date(2024, 11, 21, 12), 60, 25)
+      expect(interpolateSchedule(summer, 360).brightness).toBeGreaterThan(interpolateSchedule(winter, 360).brightness)
     })
   })
 

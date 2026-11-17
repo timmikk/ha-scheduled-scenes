@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ScrubSimulator from './ScrubSimulator.vue'
 import type { MockLight } from '../types'
+import { calculateFixtureOutput, interpolateSchedule, resolveDynamicSchedule } from '../utils/interpolator'
+import type { ScheduleStep } from '../types'
 
 describe('ScrubSimulator.vue', () => {
   const sampleLights: MockLight[] = [
@@ -60,5 +62,29 @@ describe('ScrubSimulator.vue', () => {
     await liveBtn!.trigger('click')
 
     expect(wrapper.emitted('toggleLiveRoom')).toBeTruthy()
+  })
+
+  it('emits seasonal date changes from the date picker and presets', async () => {
+    const wrapper = mount(ScrubSimulator, { props: { ...defaultProps, seasonDate: '2024-01-01' } })
+    await wrapper.find('#season-date').setValue('2024-06-21')
+    expect(wrapper.emitted('update:seasonDate')?.[0]).toEqual(['2024-06-21'])
+    const winter = wrapper.findAll('button').find(button => button.text() === 'Winter Solstice')
+    await winter?.trigger('click')
+    expect(wrapper.emitted('update:seasonDate')?.[1]).toEqual(['2024-12-21'])
+  })
+
+  it('recalculates fixture preview output for seasonal dynamic points', () => {
+    const steps: ScheduleStep[] = [
+      { id: 'night', time: '00:00', brightness: 0 },
+      { id: 'sunrise', time: '06:00', brightness: 100, dynamic: { type: 'sun', event: 'sunrise' } },
+      { id: 'day', time: '12:00', brightness: 100 },
+      { id: 'evening', time: '23:59', brightness: 0 },
+    ]
+    const previewAt = (date: Date) => {
+      const schedule = resolveDynamicSchedule(steps, date, 60, 25)
+      const active = interpolateSchedule(schedule, 360)
+      return calculateFixtureOutput({ lightId: 'light.test_fixture', roomBrightness: active.brightness, scheduleTemp: active.temp, brightnessCurves: {}, dimToWarmCurves: {} })
+    }
+    expect(previewAt(new Date(2024, 5, 21, 12)).brightness).toBeGreaterThan(previewAt(new Date(2024, 11, 21, 12)).brightness)
   })
 })
